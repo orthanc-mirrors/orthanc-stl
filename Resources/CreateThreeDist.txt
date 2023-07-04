@@ -1,0 +1,14 @@
+Source package was generated as follows:
+
+# VERSION=r154
+# cd /tmp
+# tar xvf three.js-${VERSION}.tar.gz
+# mkdir -p three.js-${VERSION}-sources/examples/jsm
+# mkdir -p three.js-${VERSION}-sources/editor/js/libs
+# cp -r three.js-${VERSION}/src three.js-${VERSION}-sources
+# cp -r three.js-${VERSION}/utils three.js-${VERSION}-sources
+# cp -r three.js-${VERSION}/examples/jsm/controls three.js-${VERSION}-sources/examples/jsm
+# cp -r three.js-${VERSION}/examples/jsm/loaders three.js-${VERSION}-sources/examples/jsm
+# cp three.js-${VERSION}/* three.js-${VERSION}-sources/
+# cp three.js-${VERSION}/editor/js/libs/es-module-shims.js three.js-${VERSION}-sources/editor/js/libs
+# tar cvf three.js-${VERSION}-sources.tar.gz three.js-${VERSION}-sources
