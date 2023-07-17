@@ -50,7 +50,7 @@ $('#series').live('pagebeforeshow', function() {
           b.insertAfter($('#series-info'));
           b.click(function() {
             if ($.mobile.pageData) {
-              window.open('../stl/viewer.html?instance=' + instanceId);
+              window.open('../stl/app/viewer.html?instance=' + instanceId);
             }
           });
         }

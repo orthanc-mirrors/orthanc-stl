@@ -65,7 +65,7 @@ scene.add(light2);
   
 const loader = new STLLoader()
 loader.load(
-  '../instances/' + instanceId + '/content/0042-0011',
+  '../../instances/' + instanceId + '/content/0042-0011',
   function (geometry) {
     const frustumSize = 200;
 
@@ -73,9 +73,14 @@ loader.load(
     geometry.translate(-(geometry.boundingBox.min.x + geometry.boundingBox.max.x) / 2.0,
                        -(geometry.boundingBox.min.y + geometry.boundingBox.max.y) / 2.0,
                        -(geometry.boundingBox.min.z + geometry.boundingBox.max.z) / 2.0);
-    geometry.scale((frustumSize / 2.0) / (geometry.boundingBox.max.x - geometry.boundingBox.min.x),
-                   (frustumSize / 2.0) / (geometry.boundingBox.max.y - geometry.boundingBox.min.y),
-                   (frustumSize / 2.0) / (geometry.boundingBox.max.z - geometry.boundingBox.min.z));
+
+    var maxSize = Math.max(geometry.boundingBox.max.x - geometry.boundingBox.min.x,
+                           geometry.boundingBox.max.y - geometry.boundingBox.min.y,
+                           geometry.boundingBox.max.z - geometry.boundingBox.min.z);
+
+    geometry.scale((frustumSize / 2.0) / maxSize,
+                   (frustumSize / 2.0) / maxSize,
+                   (frustumSize / 2.0) / maxSize);
 
     const mesh = new THREE.Mesh(geometry, material);
     scene.add(mesh);
