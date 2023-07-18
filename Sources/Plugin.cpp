@@ -1015,10 +1015,10 @@ static void EncodeSTL(std::string& target /* out */,
 }
 
 
-bool EncodeStructureSetMesh(std::string& stl,
-                            vtkImageData* volume,
-                            unsigned int resolution,
-                            bool smooth)
+bool EncodeVolume(std::string& stl,
+                  vtkImageData* volume,
+                  unsigned int resolution,
+                  bool smooth)
 {
   if (volume == NULL)
   {
@@ -1165,7 +1165,7 @@ bool EncodeStructureSetMesh(std::string& stl,
   // TODO
   // volume->SetOrigin()
 
-  return EncodeStructureSetMesh(stl, volume.Get(), resolution, smooth);
+  return EncodeVolume(stl, volume.Get(), resolution, smooth);
 }
 
 
@@ -1350,7 +1350,7 @@ void EncodeStructureSet(OrthancPluginRestOutput* output,
   std::string stl;
   if (!EncodeStructureSetMesh(stl, structureSet, roiNames, resolution, smooth))
   {
-    throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat, "Cannot encode STL");
+    throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat, "Cannot encode STL from RT-STRUCT");
   }
   else
   {
@@ -1499,25 +1499,103 @@ static void LoadNifti(vtkImageData* volume,
                                     "Only 3D NIfTI volumes are allowed");
   }
 
-  if (header.GetInfo().datatype != DT_UNSIGNED_CHAR)
+  size_t itemSize;
+  int vtkType;
+
+  switch (header.GetInfo().datatype)
   {
-    throw Orthanc::OrthancException(Orthanc::ErrorCode_NotImplemented);
+    case DT_UNSIGNED_CHAR:
+      itemSize = 1;
+      vtkType = VTK_UNSIGNED_CHAR;
+      break;
+
+    case DT_FLOAT:
+      itemSize = sizeof(float);
+      vtkType = VTK_FLOAT;
+      break;
+
+    case DT_DOUBLE:
+      itemSize = sizeof(double);
+      vtkType = VTK_DOUBLE;
+      break;
+
+    default:
+      throw Orthanc::OrthancException(Orthanc::ErrorCode_NotImplemented);
   }
 
   assert(static_cast<int>(header.GetInfo().nvox) == header.GetInfo().nx * header.GetInfo().ny * header.GetInfo().nz);
 
   const size_t pixelDataOffset = sizeof(nifti_1_header) + 4 /* extension */;
 
-  if (nifti.size() != pixelDataOffset + header.GetInfo().nvox)
+  if (nifti.size() != pixelDataOffset + header.GetInfo().nvox * itemSize)
   {
     throw Orthanc::OrthancException(Orthanc::ErrorCode_CorruptedFile);
   }
 
   volume->SetDimensions(header.GetInfo().nx, header.GetInfo().ny, header.GetInfo().nz);
-  volume->AllocateScalars(VTK_UNSIGNED_CHAR, 1);
+  volume->AllocateScalars(vtkType, 1);
   volume->SetSpacing(header.GetInfo().dx, header.GetInfo().dy, header.GetInfo().dz);
-  memcpy(volume->GetScalarPointer(), &nifti[pixelDataOffset], header.GetInfo().nvox * sizeof(unsigned char));
+  memcpy(volume->GetScalarPointer(), &nifti[pixelDataOffset], header.GetInfo().nvox * itemSize);
 }
+
+
+void EncodeNifti(OrthancPluginRestOutput* output,
+                 const char* url,
+                 const OrthancPluginHttpRequest* request)
+{
+  static const char* const KEY_NIFTI = "Nifti";
+  static const char* const KEY_RESOLUTION = "Resolution";
+  static const char* const KEY_PARENT_STUDY = "ParentStudy";
+  static const char* const KEY_SMOOTH = "Smooth";
+
+  if (request->method != OrthancPluginHttpMethod_Post)
+  {
+    OrthancPluginSendMethodNotAllowed(OrthancPlugins::GetGlobalContext(), output, "POST");
+    return;
+  }
+
+  Json::Value body;
+  if (!Orthanc::Toolbox::ReadJson(body, request->body, request->bodySize))
+  {
+    throw Orthanc::OrthancException(Orthanc::ErrorCode_BadRequest);
+  }
+
+  std::string mime, nifti;
+  if (!Orthanc::Toolbox::DecodeDataUriScheme(mime, nifti, Orthanc::SerializationToolbox::ReadString(body, KEY_NIFTI)))
+  {
+    throw Orthanc::OrthancException(Orthanc::ErrorCode_BadRequest, "Missing the \"Nifti\" argument containing the NIfTI file");
+  }
+
+  const std::string parentStudy = Orthanc::SerializationToolbox::ReadString(body, KEY_PARENT_STUDY);
+  const bool smooth = (body.isMember(KEY_SMOOTH) ?
+                       Orthanc::SerializationToolbox::ReadBoolean(body, KEY_SMOOTH) :
+                       true /* smooth by default */);
+  const unsigned int resolution = (body.isMember(KEY_RESOLUTION) ?
+                                   Orthanc::SerializationToolbox::ReadUnsignedInteger(body, KEY_RESOLUTION) :
+                                   256 /* default value */);
+
+  vtkNew<vtkImageData> volume;
+  LoadNifti(volume.Get(), nifti);
+
+  std::string stl;
+  if (!EncodeVolume(stl, volume.Get(), resolution, smooth))
+  {
+    throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat, "Cannot encode STL from NIfTI");
+  }
+  else
+  {
+    const std::string title = "STL model generated from NIfTI";
+
+    const std::string frameOfReferenceUid = Orthanc::FromDcmtkBridge::GenerateUniqueIdentifier(Orthanc::ResourceType_Instance);
+
+    Json::Value answer;
+    CallCreateDicom(answer, stl, body, parentStudy, title, frameOfReferenceUid, title);
+
+    std::string s = answer.toStyledString();
+    OrthancPluginAnswerBuffer(OrthancPlugins::GetGlobalContext(), output, s.c_str(), s.size(), Orthanc::MIME_JSON);
+  }
+}
+
 
 extern "C"
 {
@@ -1562,7 +1640,8 @@ extern "C"
 
     if (hasCreateDicomStl_)
     {
-      OrthancPlugins::RegisterRestCallback<EncodeStructureSet>("/stl/encode", true);
+      OrthancPlugins::RegisterRestCallback<EncodeStructureSet>("/stl/encode-rtstruct", true);
+      OrthancPlugins::RegisterRestCallback<EncodeNifti>("/stl/encode-nifti", true);
     }
 
     // Extend the default Orthanc Explorer with custom JavaScript for STL

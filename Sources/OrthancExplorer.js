@@ -108,7 +108,7 @@ function AddGenerateFromRtStructButton(instanceId, id, parent) {
                 var smooth = $('#' + id + '-smooth').is(':checked');
 
                 $.ajax({
-                  url: '../stl/encode',
+                  url: '../stl/encode-rtstruct',
                   type: 'POST',
                   data: JSON.stringify({
                     'Instance' : instanceId,
