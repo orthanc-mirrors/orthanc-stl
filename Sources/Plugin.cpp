@@ -26,6 +26,7 @@
 
 #include <EmbeddedResources.h>
 
+#include <Compression/GzipCompressor.h>
 #include <ChunkedBuffer.h>
 #include <DicomParsing/FromDcmtkBridge.h>
 #include <DicomParsing/ParsedDicomFile.h>
@@ -46,6 +47,9 @@
 #include <vtkTriangle.h>
 
 #include <boost/thread/shared_mutex.hpp>
+
+#include <nifti1_io.h>
+
 
 // Forward declaration
 void ReadStaticAsset(std::string& target,
@@ -1111,10 +1115,15 @@ bool EncodeStructureSetMesh(std::string& stl,
   padding->SetInputData(resize->GetOutput());
   padding->Update();
 
+  double range[2];
+  padding->GetOutput()->GetScalarRange(range);
+
+  const double isoValue = (range[0] + range[1]) / 2.0;
+
   vtkNew<vtkMarchingCubes> surface;
   surface->SetInputData(padding->GetOutput());
   surface->ComputeNormalsOn();
-  surface->SetValue(0, 128 /*isoValue*/);
+  surface->SetValue(0, isoValue);
   surface->Update();
 
   if (smooth)
@@ -1396,6 +1405,95 @@ void ExtractStl(OrthancPluginRestOutput* output,
   }
 }
 
+
+
+class NiftiHeader : public boost::noncopyable
+{
+private:
+  nifti_image* image_;
+
+public:
+  NiftiHeader(const std::string& nifti)
+  {
+    nifti_1_header header;
+    if (nifti.size() < sizeof(header))
+    {
+      throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat);
+    }
+
+    memcpy(&header, nifti.c_str(), sizeof(header));
+    if (!nifti_hdr_looks_good(&header))
+    {
+      throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat);
+    }
+
+    image_ = nifti_convert_nhdr2nim(header, "dummy_filename");
+    if (image_ == NULL)
+    {
+      throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat);
+    }
+  }
+
+  ~NiftiHeader()
+  {
+    nifti_image_free(image_);
+  }
+
+  const nifti_image& GetInfo() const
+  {
+    assert(image_ != NULL);
+    return *image_;
+  }
+};
+
+
+static void LoadNifti(vtkImageData* volume,
+                      std::string& nifti)
+{
+  if (volume == NULL)
+  {
+    throw Orthanc::OrthancException(Orthanc::ErrorCode_NullPointer);
+  }
+
+  const uint8_t* p = reinterpret_cast<const uint8_t*>(nifti.c_str());
+
+  if (nifti.size() >= 2 &&
+      p[0] == 0x1f &&
+      p[1] == 0x8b)
+  {
+    Orthanc::GzipCompressor compressor;
+    std::string uncompressed;
+    Orthanc::IBufferCompressor::Uncompress(uncompressed, compressor, nifti);
+    nifti.swap(uncompressed);
+  }
+
+  NiftiHeader header(nifti);
+
+  if (header.GetInfo().ndim != 3)
+  {
+    throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat,
+                                    "Only 3D NIfTI volumes are allowed");
+  }
+
+  if (header.GetInfo().datatype != DT_UNSIGNED_CHAR)
+  {
+    throw Orthanc::OrthancException(Orthanc::ErrorCode_NotImplemented);
+  }
+
+  assert(static_cast<int>(header.GetInfo().nvox) == header.GetInfo().nx * header.GetInfo().ny * header.GetInfo().nz);
+
+  const size_t pixelDataOffset = sizeof(nifti_1_header) + 4 /* extension */;
+
+  if (nifti.size() != pixelDataOffset + header.GetInfo().nvox)
+  {
+    throw Orthanc::OrthancException(Orthanc::ErrorCode_CorruptedFile);
+  }
+
+  volume->SetDimensions(header.GetInfo().nx, header.GetInfo().ny, header.GetInfo().nz);
+  volume->AllocateScalars(VTK_UNSIGNED_CHAR, 1);
+  volume->SetSpacing(header.GetInfo().dx, header.GetInfo().dy, header.GetInfo().dz);
+  memcpy(volume->GetScalarPointer(), &nifti[pixelDataOffset], header.GetInfo().nvox * sizeof(unsigned char));
+}
 
 extern "C"
 {

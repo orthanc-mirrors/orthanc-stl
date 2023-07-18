@@ -62,6 +62,7 @@ set(ORTHANC_FRAMEWORK_ROOT "" CACHE STRING "Path to the Orthanc source directory
 SET(USE_SYSTEM_ORTHANC_SDK ON CACHE BOOL "Use the system version of the Orthanc plugin SDK")
 
 # Parameters to fine-tune linking against system libraries
+set(USE_SYSTEM_NIFTILIB ON CACHE BOOL "Use the system version of niftilib")
 set(USE_SYSTEM_VTK ON CACHE BOOL "Use the system version of VTK")
 
 
@@ -120,6 +121,7 @@ endif()
 #####################################################################
 
 include(${CMAKE_SOURCE_DIR}/Resources/CMake/LibVtkConfiguration.cmake)
+include(${CMAKE_SOURCE_DIR}/Resources/CMake/LibNiftiConfiguration.cmake)
 
 add_definitions(
   -DHAS_ORTHANC_EXCEPTION=1
@@ -203,6 +205,7 @@ add_library(OrthancSTL SHARED
   ${ORTHANC_DICOM_SOURCES_DEPENDENCIES}
   ${ORTHANC_DICOM_SOURCES_INTERNAL}
   ${ORTHANC_STL_SOURCES}
+  ${NIFTILIB_SOURCES}
   )
 
 DefineSourceBasenameForTarget(OrthancSTL)
