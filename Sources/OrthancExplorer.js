@@ -22,39 +22,66 @@
  **/
 
 
+const SOP_CLASS_UID_STL = '1.2.840.10008.5.1.4.1.1.104.3';
+
+function AddOpenStlViewerButton(instanceId, id, parent) {
+  var b = $('<a>')
+      .attr('id', id)
+      .attr('data-role', 'button')
+      .attr('href', '#')
+      .attr('data-icon', 'search')
+      .attr('data-theme', 'e')
+      .text('STL viewer')
+      .button();
+
+  b.insertAfter($('#' + parent));
+  b.click(function() {
+    if ($.mobile.pageData) {
+      window.open('../stl/app/viewer.html?instance=' + instanceId);
+    }
+  });
+}
+
+
 $('#series').live('pagebeforeshow', function() {
   var seriesId = $.mobile.pageData.uuid;
 
-  $('#stl-button').remove();
+  $('#stl-button-series').remove();
 
   // Test whether this is a whole-slide image by check the SOP Class
   // UID of one instance of the series
   GetResource('/series/' + seriesId, function(series) {
-    var instanceId = series['Instances'][0];
-    
-    $.ajax({
-      url: '/instances/' + instanceId + '/metadata/SopClassUid',
-      success: function(sopClassUid) {
-        if (sopClassUid == '1.2.840.10008.5.1.4.1.1.104.3') {
+    if (series['Instances'].length == 1) {
+      var instanceId = series['Instances'][0];
 
-          // This is an "Encapsulated STL Storage" IOD, register the button
-          var b = $('<a>')
-              .attr('id', 'stl-button')
-              .attr('data-role', 'button')
-              .attr('href', '#')
-              .attr('data-icon', 'search')
-              .attr('data-theme', 'e')
-              .text('STL viewer')
-              .button();
-
-          b.insertAfter($('#series-info'));
-          b.click(function() {
-            if ($.mobile.pageData) {
-              window.open('../stl/app/viewer.html?instance=' + instanceId);
-            }
-          });
+      $.ajax({
+        url: '/instances/' + instanceId + '/metadata/SopClassUid',
+        success: function(sopClassUid) {
+          if (sopClassUid == SOP_CLASS_UID_STL) {
+            // This is an "Encapsulated STL Storage" IOD, register the button
+            AddOpenStlViewerButton(instanceId, 'stl-button-series', 'series-info');
+          }
         }
+      });
+    }
+  });
+});
+
+
+$('#instance').live('pagebeforeshow', function() {
+  var instanceId = $.mobile.pageData.uuid;
+
+  $('#stl-button-instance').remove();
+
+  // Test whether this is a whole-slide image by check the SOP Class
+  // UID of one instance of the series
+  $.ajax({
+    url: '/instances/' + instanceId + '/metadata/SopClassUid',
+    success: function(sopClassUid) {
+      if (sopClassUid == SOP_CLASS_UID_STL) {
+        // This is an "Encapsulated STL Storage" IOD, register the button
+        AddOpenStlViewerButton(instanceId, 'stl-button-instance', 'instance-info');
       }
-    });
+    }
   });
 });

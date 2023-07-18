@@ -1212,9 +1212,24 @@ void Encode(OrthancPluginRestOutput* output,
       else
       {
         std::string description;
+
+        if (parsed.GetTagValue(description, Orthanc::DICOM_TAG_SERIES_DESCRIPTION))
+        {
+          description += ": ";
+        }
+        else
+        {
+          description.clear();
+        }
+
+        bool first = true;
         for (std::set<std::string>::const_iterator it = roiNames.begin(); it != roiNames.end(); ++it)
         {
-          if (!description.empty())
+          if (first)
+          {
+            first = false;
+          }
+          else
           {
             description += ", ";
           }
@@ -1279,17 +1294,24 @@ extern "C"
     OrthancPluginSetDescription(context, "STL plugin for Orthanc.");
 
     OrthancPlugins::RegisterRestCallback<ServeFile>("/stl/app/(.*)", true);
-
-    // Extend the default Orthanc Explorer with custom JavaScript for STL
-    std::string explorer;
-    Orthanc::EmbeddedResources::GetFileResource(explorer, Orthanc::EmbeddedResources::ORTHANC_EXPLORER);
-    OrthancPluginExtendOrthancExplorer(OrthancPlugins::GetGlobalContext(), explorer.c_str());
-
     OrthancPlugins::RegisterRestCallback<ListStructures>("/stl/rt-struct/([0-9a-f-]+)", true);
 
     if (hasCreateDicomStl_)
     {
       OrthancPlugins::RegisterRestCallback<Encode>("/stl/encode", true);
+    }
+
+    // Extend the default Orthanc Explorer with custom JavaScript for STL
+    std::string explorer;
+
+    {
+      Orthanc::EmbeddedResources::GetFileResource(explorer, Orthanc::EmbeddedResources::ORTHANC_EXPLORER);
+
+      std::map<std::string, std::string> dictionary;
+      dictionary["HAS_CREATE_DICOM_STL"] = (hasCreateDicomStl_ ? "true" : "false");
+      explorer = Orthanc::Toolbox::SubstituteVariables(explorer, dictionary);
+
+      OrthancPluginExtendOrthancExplorer(OrthancPlugins::GetGlobalContext(), explorer.c_str());
     }
 
     return 0;
