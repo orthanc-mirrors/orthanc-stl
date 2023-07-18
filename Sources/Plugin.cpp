@@ -24,7 +24,10 @@
 
 #include "../Resources/Orthanc/Plugins/OrthancPluginCppWrapper.h"
 
+#include <EmbeddedResources.h>
+
 #include <ChunkedBuffer.h>
+#include <DicomParsing/FromDcmtkBridge.h>
 #include <DicomParsing/ParsedDicomFile.h>
 #include <Images/ImageProcessing.h>
 #include <Logging.h>
@@ -32,17 +35,15 @@
 #include <SerializationToolbox.h>
 #include <SystemToolbox.h>
 
-#include <EmbeddedResources.h>
-
+#include <vtkImageConstantPad.h>
 #include <vtkImageData.h>
 #include <vtkImageResize.h>
 #include <vtkMarchingCubes.h>
 #include <vtkNew.h>
 #include <vtkPolyData.h>
-#include <vtkTriangle.h>
-#include <vtkSmoothPolyDataFilter.h>
 #include <vtkPolyDataNormals.h>
-#include <vtkImageConstantPad.h>
+#include <vtkSmoothPolyDataFilter.h>
+#include <vtkTriangle.h>
 
 #include <boost/thread/shared_mutex.hpp>
 
@@ -592,6 +593,8 @@ private:
   std::string                     studyInstanceUid_;
   std::string                     seriesInstanceUid_;
   std::string                     sopInstanceUid_;
+  bool                            hasFrameOfReferenceUid_;
+  std::string                     frameOfReferenceUid_;
 
   void ComputeGeometry()
   {
@@ -687,13 +690,32 @@ public:
     hasGeometry_(false),
     slicesSpacing_(0),
     minProjectionAlongNormal_(0),
-    maxProjectionAlongNormal_(0)
+    maxProjectionAlongNormal_(0),
+    hasFrameOfReferenceUid_(false)
   {
     DcmDataset& dataset = *dicom.GetDcmtkObject().getDataset();
     patientId_ = GetStringValue(dataset, DCM_PatientID);
     studyInstanceUid_ = GetStringValue(dataset, DCM_StudyInstanceUID);
     seriesInstanceUid_ = GetStringValue(dataset, DCM_SeriesInstanceUID);
     sopInstanceUid_ = GetStringValue(dataset, DCM_SOPInstanceUID);
+
+    DcmSequenceOfItems* frame = NULL;
+    if (!dataset.findAndGetSequence(DCM_ReferencedFrameOfReferenceSequence, frame).good() ||
+        frame == NULL)
+    {
+      throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat);
+    }
+
+    if (frame->card() == 1)
+    {
+      const char* v = NULL;
+      if (frame->getItem(0)->findAndGetString(DCM_FrameOfReferenceUID, v).good() &&
+          v != NULL)
+      {
+        hasFrameOfReferenceUid_ = true;
+        frameOfReferenceUid_.assign(v);
+      }
+    }
 
     DcmSequenceOfItems* rois = NULL;
     if (!dataset.findAndGetSequence(DCM_ROIContourSequence, rois).good() ||
@@ -888,6 +910,23 @@ public:
     }
 
     return false;
+  }
+
+  bool HasFrameOfReferenceUid() const
+  {
+    return hasFrameOfReferenceUid_;
+  }
+
+  const std::string& GetFrameOfReferenceUid() const
+  {
+    if (hasFrameOfReferenceUid_)
+    {
+      return frameOfReferenceUid_;
+    }
+    else
+    {
+      throw Orthanc::OrthancException(Orthanc::ErrorCode_BadSequenceOfCalls);
+    }
   }
 };
 
@@ -1151,6 +1190,25 @@ void ListStructures(OrthancPluginRestOutput* output,
 }
 
 
+static void AddDefaultTagValue(Json::Value& target,
+                               const Orthanc::DicomTag& tag,
+                               const std::string& value)
+{
+  if (!target.isMember(tag.Format()))
+  {
+    target[tag.Format()] = value;
+  }
+}
+
+
+static void AddDefaultTagValue(Json::Value& target,
+                               const DcmTagKey& tag,
+                               const std::string& value)
+{
+  AddDefaultTagValue(target, Orthanc::DicomTag(tag.getGroup(), tag.getElement()), value);
+}
+
+
 void Encode(OrthancPluginRestOutput* output,
             const char* url,
             const OrthancPluginHttpRequest* request)
@@ -1198,15 +1256,25 @@ void Encode(OrthancPluginRestOutput* output,
     std::string content;
     Orthanc::Toolbox::EncodeDataUriScheme(content, "model/stl", stl);
 
-    Json::Value create;
-    create["Content"] = content;
-    create["Parent"] = structureSet.HashStudy();
+    Json::Value normalized = Json::objectValue;
 
     if (body.isMember(KEY_TAGS))
     {
-      create[KEY_TAGS] = body[KEY_TAGS];
+      const Json::Value& tags = body[KEY_TAGS];
+      if (tags.type() != Json::objectValue)
+      {
+        throw Orthanc::OrthancException(Orthanc::ErrorCode_BadRequest, "Tags must be provided as a JSON object");
+      }
+
+      std::vector<std::string> keys = tags.getMemberNames();
+      for (size_t i = 0; i < keys.size(); i++)
+      {
+        const Orthanc::DicomTag tag = Orthanc::FromDcmtkBridge::ParseTag(keys[i]);
+        normalized[tag.Format()] = tags[keys[i]];
+      }
     }
-    else
+
+    if (!normalized.isMember(Orthanc::DICOM_TAG_SERIES_DESCRIPTION.Format()))
     {
       std::string description;
 
@@ -1234,9 +1302,56 @@ void Encode(OrthancPluginRestOutput* output,
         description += *it;
       }
 
-      create[KEY_TAGS] = Json::objectValue;
-      create[KEY_TAGS]["SeriesDescription"] = description;
+      normalized[Orthanc::DICOM_TAG_SERIES_DESCRIPTION.Format()] = description;
     }
+
+    AddDefaultTagValue(normalized, Orthanc::DICOM_TAG_SERIES_NUMBER, "1");
+
+    std::string s;
+    if (structureSet.HasFrameOfReferenceUid())
+    {
+      s = structureSet.GetFrameOfReferenceUid();
+    }
+    else
+    {
+      s = Orthanc::FromDcmtkBridge::GenerateUniqueIdentifier(Orthanc::ResourceType_Instance);
+    }
+
+    AddDefaultTagValue(normalized, Orthanc::DICOM_TAG_FRAME_OF_REFERENCE_UID, s);
+    AddDefaultTagValue(normalized, Orthanc::DICOM_TAG_INSTANCE_NUMBER, "1");
+
+    const std::string title = "STL model generated from DICOM RT-STRUCT";
+
+    AddDefaultTagValue(normalized, DCM_BurnedInAnnotation, "NO");
+    AddDefaultTagValue(normalized, DCM_DeviceSerialNumber, ORTHANC_STL_VERSION);
+    AddDefaultTagValue(normalized, DCM_DocumentTitle, title);
+    AddDefaultTagValue(normalized, DCM_Manufacturer, "Orthanc STL plugin");
+    AddDefaultTagValue(normalized, DCM_ManufacturerModelName, "Orthanc STL plugin");
+    AddDefaultTagValue(normalized, DCM_PositionReferenceIndicator, "");
+    AddDefaultTagValue(normalized, DCM_SoftwareVersions, ORTHANC_STL_VERSION);
+    AddDefaultTagValue(normalized, DCM_ConceptNameCodeSequence, "");
+
+    std::string date, time;
+    Orthanc::SystemToolbox::GetNowDicom(date, time, true /* use UTC time (not local time) */);
+    AddDefaultTagValue(normalized, DCM_AcquisitionDateTime, date + time);
+
+    const Orthanc::DicomTag MEASUREMENT_UNITS_CODE_SEQUENCE(DCM_MeasurementUnitsCodeSequence.getGroup(),
+                                                            DCM_MeasurementUnitsCodeSequence.getElement());
+
+    if (!normalized.isMember(MEASUREMENT_UNITS_CODE_SEQUENCE.Format()))
+    {
+      Json::Value item;
+      item["CodeValue"] = "mm";
+      item["CodingSchemeDesignator"] = "UCUM";
+      item["CodeMeaning"] = title;
+
+      normalized[MEASUREMENT_UNITS_CODE_SEQUENCE.Format()].append(item);
+    }
+
+    Json::Value create;
+    create["Content"] = content;
+    create["Parent"] = structureSet.HashStudy();
+    create["Tags"] = normalized;
 
     Json::Value answer;
     if (OrthancPlugins::RestApiPost(answer, "/tools/create-dicom", create.toStyledString(), false))
