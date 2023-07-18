@@ -119,6 +119,12 @@ void ServeFile(OrthancPluginRestOutput* output,
                const char* url,
                const OrthancPluginHttpRequest* request)
 {
+  if (request->method != OrthancPluginHttpMethod_Get)
+  {
+    OrthancPluginSendMethodNotAllowed(OrthancPlugins::GetGlobalContext(), output, "GET");
+    return;
+  }
+
   std::string file = request->groups[0];
 
   if (file == "viewer.html")
@@ -234,9 +240,8 @@ public:
   }
 };
 
-static void GetStringValue(std::string& value,
-                           DcmItem& item,
-                           const DcmTagKey& key)
+static std::string GetStringValue(DcmItem& item,
+                                  const DcmTagKey& key)
 {
   const char* s = NULL;
   if (!item.findAndGetString(key, s).good() ||
@@ -246,7 +251,7 @@ static void GetStringValue(std::string& value,
   }
   else
   {
-    value.assign(s);
+    return Orthanc::Toolbox::StripSpaces(s);
   }
 }
 
@@ -272,9 +277,7 @@ static void ListStructuresNames(std::set<std::string>& target,
     }
     else
     {
-      std::string value;
-      GetStringValue(value, *item, DCM_ROIName);
-      target.insert(value);
+      target.insert(GetStringValue(*item, DCM_ROIName));
     }
   }
 }
@@ -415,22 +418,17 @@ public:
       throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat);
     }
 
-    GetStringValue(roiName_, *structure, DCM_ROIName);
-    GetStringValue(referencedSopInstanceUid_, *referenced->getItem(0), DCM_ReferencedSOPInstanceUID);
+    roiName_ = GetStringValue(*structure, DCM_ROIName);
+    referencedSopInstanceUid_ = GetStringValue(*referenced->getItem(0), DCM_ReferencedSOPInstanceUID);
 
-    std::string s;
-    GetStringValue(s, *contour, DCM_ContourGeometricType);
-    if (s != "CLOSED_PLANAR")
+    if (GetStringValue(*contour, DCM_ContourGeometricType) != "CLOSED_PLANAR")
     {
       throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat);
     }
 
     {
-      std::string color;
-      GetStringValue(color, *roi, DCM_ROIDisplayColor);
-
       std::vector<std::string> tokens;
-      Orthanc::Toolbox::TokenizeString(tokens, color, '\\');
+      Orthanc::Toolbox::TokenizeString(tokens, GetStringValue(*roi, DCM_ROIDisplayColor), '\\');
 
       uint32_t r, g, b;
       if (tokens.size() != 3 ||
@@ -450,12 +448,10 @@ public:
     }
 
     {
-      GetStringValue(s, *contour, DCM_ContourData);
-
       std::vector<std::string> tokens;
-      Orthanc::Toolbox::TokenizeString(tokens, s, '\\');
+      Orthanc::Toolbox::TokenizeString(tokens, GetStringValue(*contour, DCM_ContourData), '\\');
 
-      GetStringValue(s, *contour, DCM_NumberOfContourPoints);
+      const std::string s = GetStringValue(*contour, DCM_NumberOfContourPoints);
 
       uint32_t countPoints;
       if (!Orthanc::SerializationToolbox::ParseUnsignedInteger32(countPoints, s) ||
@@ -694,10 +690,10 @@ public:
     maxProjectionAlongNormal_(0)
   {
     DcmDataset& dataset = *dicom.GetDcmtkObject().getDataset();
-    GetStringValue(patientId_, dataset, DCM_PatientID);
-    GetStringValue(studyInstanceUid_, dataset, DCM_StudyInstanceUID);
-    GetStringValue(seriesInstanceUid_, dataset, DCM_SeriesInstanceUID);
-    GetStringValue(sopInstanceUid_, dataset, DCM_SOPInstanceUID);
+    patientId_ = GetStringValue(dataset, DCM_PatientID);
+    studyInstanceUid_ = GetStringValue(dataset, DCM_StudyInstanceUID);
+    seriesInstanceUid_ = GetStringValue(dataset, DCM_SeriesInstanceUID);
+    sopInstanceUid_ = GetStringValue(dataset, DCM_SOPInstanceUID);
 
     DcmSequenceOfItems* rois = NULL;
     if (!dataset.findAndGetSequence(DCM_ROIContourSequence, rois).good() ||
@@ -1111,40 +1107,47 @@ bool EncodeStructureSetMesh(std::string& stl,
 }
 
 
-void ListStructures(OrthancPluginRestOutput* output,
-                    const char* url,
-                    const OrthancPluginHttpRequest* request)
+static Orthanc::ParsedDicomFile* LoadInstance(const std::string& instanceId)
 {
-  const std::string instanceId(request->groups[0]);
-
-  if (request->method != OrthancPluginHttpMethod_Get)
-  {
-    OrthancPluginSendMethodNotAllowed(OrthancPlugins::GetGlobalContext(), output, "GET");
-    return;
-  }
-
   std::string dicom;
+
   if (!OrthancPlugins::RestApiGetString(dicom, "/instances/" + instanceId + "/file", false))
   {
     throw Orthanc::OrthancException(Orthanc::ErrorCode_UnknownResource);
   }
   else
   {
-    Orthanc::ParsedDicomFile parsed(dicom);
-
-    std::set<std::string> names;
-    ListStructuresNames(names, parsed);
-
-    Json::Value answer = Json::arrayValue;
-
-    for (std::set<std::string>::const_iterator it = names.begin(); it != names.end(); ++it)
-    {
-      answer.append(*it);
-    }
-
-    std::string s = answer.toStyledString();
-    OrthancPluginAnswerBuffer(OrthancPlugins::GetGlobalContext(), output, s.c_str(), s.size(), Orthanc::MIME_JSON);
+    return new Orthanc::ParsedDicomFile(dicom);
   }
+}
+
+
+void ListStructures(OrthancPluginRestOutput* output,
+                    const char* url,
+                    const OrthancPluginHttpRequest* request)
+{
+  if (request->method != OrthancPluginHttpMethod_Get)
+  {
+    OrthancPluginSendMethodNotAllowed(OrthancPlugins::GetGlobalContext(), output, "GET");
+    return;
+  }
+
+  const std::string instanceId(request->groups[0]);
+
+  std::unique_ptr<Orthanc::ParsedDicomFile> dicom(LoadInstance(instanceId));
+
+  std::set<std::string> names;
+  ListStructuresNames(names, *dicom);
+
+  Json::Value answer = Json::arrayValue;
+
+  for (std::set<std::string>::const_iterator it = names.begin(); it != names.end(); ++it)
+  {
+    answer.append(*it);
+  }
+
+  std::string s = answer.toStyledString();
+  OrthancPluginAnswerBuffer(OrthancPlugins::GetGlobalContext(), output, s.c_str(), s.size(), Orthanc::MIME_JSON);
 }
 
 
@@ -1181,77 +1184,100 @@ void Encode(OrthancPluginRestOutput* output,
   std::set<std::string> roiNames;
   Orthanc::SerializationToolbox::ReadSetOfStrings(roiNames, body, KEY_ROI_NAMES);
 
-  std::string dicom;
-  if (!OrthancPlugins::RestApiGetString(dicom, "/instances/" + instanceId + "/file", false))
+  std::unique_ptr<Orthanc::ParsedDicomFile> dicom(LoadInstance(instanceId));
+
+  StructureSet structureSet(*dicom);
+
+  std::string stl;
+  if (!EncodeStructureSetMesh(stl, structureSet, roiNames, resolution, smooth))
   {
-    throw Orthanc::OrthancException(Orthanc::ErrorCode_UnknownResource);
+    throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat, "Cannot encode STL");
   }
   else
   {
-    Orthanc::ParsedDicomFile parsed(dicom);
-    StructureSet structureSet(parsed);
+    std::string content;
+    Orthanc::Toolbox::EncodeDataUriScheme(content, "model/stl", stl);
 
-    std::string stl;
-    if (!EncodeStructureSetMesh(stl, structureSet, roiNames, resolution, smooth))
+    Json::Value create;
+    create["Content"] = content;
+    create["Parent"] = structureSet.HashStudy();
+
+    if (body.isMember(KEY_TAGS))
     {
-      throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat, "Cannot encode STL");
+      create[KEY_TAGS] = body[KEY_TAGS];
     }
     else
     {
-      std::string content;
-      Orthanc::Toolbox::EncodeDataUriScheme(content, "model/stl", stl);
+      std::string description;
 
-      Json::Value create;
-      create["Content"] = content;
-      create["Parent"] = structureSet.HashStudy();
-
-      if (body.isMember(KEY_TAGS))
+      if (dicom->GetTagValue(description, Orthanc::DICOM_TAG_SERIES_DESCRIPTION))
       {
-        create[KEY_TAGS] = body[KEY_TAGS];
+        description += ": ";
       }
       else
       {
-        std::string description;
+        description.clear();
+      }
 
-        if (parsed.GetTagValue(description, Orthanc::DICOM_TAG_SERIES_DESCRIPTION))
+      bool first = true;
+      for (std::set<std::string>::const_iterator it = roiNames.begin(); it != roiNames.end(); ++it)
+      {
+        if (first)
         {
-          description += ": ";
+          first = false;
         }
         else
         {
-          description.clear();
+          description += ", ";
         }
 
-        bool first = true;
-        for (std::set<std::string>::const_iterator it = roiNames.begin(); it != roiNames.end(); ++it)
-        {
-          if (first)
-          {
-            first = false;
-          }
-          else
-          {
-            description += ", ";
-          }
-
-          description += *it;
-        }
-
-        create[KEY_TAGS] = Json::objectValue;
-        create[KEY_TAGS]["SeriesDescription"] = description;
+        description += *it;
       }
 
-      Json::Value answer;
-      if (OrthancPlugins::RestApiPost(answer, "/tools/create-dicom", create.toStyledString(), false))
-      {
-        std::string s = answer.toStyledString();
-        OrthancPluginAnswerBuffer(OrthancPlugins::GetGlobalContext(), output, s.c_str(), s.size(), Orthanc::MIME_JSON);
-      }
-      else
-      {
-        throw Orthanc::OrthancException(Orthanc::ErrorCode_BadRequest, "Cannot create DICOM from STL");
-      }
+      create[KEY_TAGS] = Json::objectValue;
+      create[KEY_TAGS]["SeriesDescription"] = description;
     }
+
+    Json::Value answer;
+    if (OrthancPlugins::RestApiPost(answer, "/tools/create-dicom", create.toStyledString(), false))
+    {
+      std::string s = answer.toStyledString();
+      OrthancPluginAnswerBuffer(OrthancPlugins::GetGlobalContext(), output, s.c_str(), s.size(), Orthanc::MIME_JSON);
+    }
+    else
+    {
+      throw Orthanc::OrthancException(Orthanc::ErrorCode_BadRequest, "Cannot create DICOM from STL");
+    }
+  }
+}
+
+
+void ExtractStl(OrthancPluginRestOutput* output,
+                const char* url,
+                const OrthancPluginHttpRequest* request)
+{
+  if (request->method != OrthancPluginHttpMethod_Get)
+  {
+    OrthancPluginSendMethodNotAllowed(OrthancPlugins::GetGlobalContext(), output, "GET");
+    return;
+  }
+
+  const std::string instanceId(request->groups[0]);
+
+  std::unique_ptr<Orthanc::ParsedDicomFile> dicom(LoadInstance(instanceId));
+  DcmDataset& dataset = *dicom->GetDcmtkObject().getDataset();
+
+  std::string stl;
+  if (GetStringValue(dataset, DCM_MIMETypeOfEncapsulatedDocument) != Orthanc::MIME_STL ||
+      GetStringValue(dataset, DCM_SOPClassUID) != "1.2.840.10008.5.1.4.1.1.104.3" ||
+      !dicom->GetTagValue(stl, Orthanc::DICOM_TAG_ENCAPSULATED_DOCUMENT))
+  {
+    throw Orthanc::OrthancException(Orthanc::ErrorCode_BadRequest, "DICOM instance not encapsulating a STL model: " + instanceId);
+  }
+  else
+  {
+    OrthancPluginAnswerBuffer(OrthancPlugins::GetGlobalContext(), output,
+                              stl.empty() ? NULL : stl.c_str(), stl.size(), Orthanc::MIME_STL);
   }
 }
 
@@ -1294,6 +1320,7 @@ extern "C"
     OrthancPluginSetDescription(context, "STL plugin for Orthanc.");
 
     OrthancPlugins::RegisterRestCallback<ServeFile>("/stl/app/(.*)", true);
+    OrthancPlugins::RegisterRestCallback<ExtractStl>("/instances/([0-9a-f-]+)/stl", true);
     OrthancPlugins::RegisterRestCallback<ListStructures>("/stl/rt-struct/([0-9a-f-]+)", true);
 
     if (hasCreateDicomStl_)
