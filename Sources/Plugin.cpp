@@ -1016,6 +1016,68 @@ static void EncodeSTL(std::string& target /* out */,
 
 
 bool EncodeStructureSetMesh(std::string& stl,
+                            vtkImageData* volume,
+                            unsigned int resolution,
+                            bool smooth)
+{
+  if (volume == NULL)
+  {
+    throw Orthanc::OrthancException(Orthanc::ErrorCode_NullPointer);
+  }
+
+  vtkNew<vtkImageResize> resize;
+  resize->SetOutputDimensions(resolution, resolution, resolution);
+  resize->SetInputData(volume);
+  resize->Update();
+
+  vtkNew<vtkImageConstantPad> padding;
+  padding->SetConstant(0);
+  padding->SetOutputNumberOfScalarComponents(1);
+  padding->SetOutputWholeExtent(-1, resolution, -1, resolution, -1, resolution);
+  padding->SetInputData(resize->GetOutput());
+  padding->Update();
+
+  double range[2];
+  padding->GetOutput()->GetScalarRange(range);
+
+  const double isoValue = (range[0] + range[1]) / 2.0;
+
+  vtkNew<vtkMarchingCubes> surface;
+  surface->SetInputData(padding->GetOutput());
+  surface->ComputeNormalsOn();
+  surface->SetValue(0, isoValue);
+  surface->Update();
+
+  if (smooth)
+  {
+    vtkNew<vtkSmoothPolyDataFilter> smoothFilter;
+    // Apply volume smoothing
+    // https://examples.vtk.org/site/Cxx/PolyData/SmoothPolyDataFilter/
+    smoothFilter->SetInputConnection(surface->GetOutputPort());
+    smoothFilter->SetNumberOfIterations(15);
+    smoothFilter->SetRelaxationFactor(0.1);
+    smoothFilter->FeatureEdgeSmoothingOff();
+    smoothFilter->BoundarySmoothingOn();
+    smoothFilter->Update();
+
+    vtkNew<vtkPolyDataNormals> normalGenerator;
+    normalGenerator->SetInputConnection(smoothFilter->GetOutputPort());
+    normalGenerator->ComputePointNormalsOn();
+    normalGenerator->ComputeCellNormalsOn();
+    normalGenerator->Update();
+
+    EncodeSTL(stl, *normalGenerator->GetOutput());
+  }
+  else
+  {
+    EncodeSTL(stl, *surface->GetOutput());
+  }
+
+  return true;
+}
+
+
+bool EncodeStructureSetMesh(std::string& stl,
                             const StructureSet& structureSet,
                             const std::set<std::string>& roiNames,
                             unsigned int resolution,
@@ -1095,63 +1157,15 @@ bool EncodeStructureSetMesh(std::string& stl,
     Orthanc::ImageProcessing::FillPolygon(filler, points);
   }
 
-  vtkNew<vtkImageResize> resize;
-  resize->SetOutputDimensions(resolution, resolution, resolution);
-  resize->SetInputData(volume.Get());
-  resize->Update();
-
-  resize->GetOutput()->SetSpacing(
+  volume->SetSpacing(
     extent.GetWidth() / static_cast<double>(resolution),
     extent.GetHeight() / static_cast<double>(resolution),
-    (structureSet.GetMaxProjectionAlongNormal() - structureSet.GetMinProjectionAlongNormal()) / static_cast<double>(resolution));
+    (structureSet.GetMaxProjectionAlongNormal() - structureSet.GetMinProjectionAlongNormal()) / static_cast<double>(depth));
 
   // TODO
-  // resize->GetOutput()->SetOrigin()
+  // volume->SetOrigin()
 
-  vtkNew<vtkImageConstantPad> padding;
-  padding->SetConstant(0);
-  padding->SetOutputNumberOfScalarComponents(1);
-  padding->SetOutputWholeExtent(-1, resolution, -1, resolution, -1, resolution);
-  padding->SetInputData(resize->GetOutput());
-  padding->Update();
-
-  double range[2];
-  padding->GetOutput()->GetScalarRange(range);
-
-  const double isoValue = (range[0] + range[1]) / 2.0;
-
-  vtkNew<vtkMarchingCubes> surface;
-  surface->SetInputData(padding->GetOutput());
-  surface->ComputeNormalsOn();
-  surface->SetValue(0, isoValue);
-  surface->Update();
-
-  if (smooth)
-  {
-    vtkNew<vtkSmoothPolyDataFilter> smoothFilter;
-    // Apply volume smoothing
-    // https://examples.vtk.org/site/Cxx/PolyData/SmoothPolyDataFilter/
-    smoothFilter->SetInputConnection(surface->GetOutputPort());
-    smoothFilter->SetNumberOfIterations(15);
-    smoothFilter->SetRelaxationFactor(0.1);
-    smoothFilter->FeatureEdgeSmoothingOff();
-    smoothFilter->BoundarySmoothingOn();
-    smoothFilter->Update();
-
-    vtkNew<vtkPolyDataNormals> normalGenerator;
-    normalGenerator->SetInputConnection(smoothFilter->GetOutputPort());
-    normalGenerator->ComputePointNormalsOn();
-    normalGenerator->ComputeCellNormalsOn();
-    normalGenerator->Update();
-
-    EncodeSTL(stl, *normalGenerator->GetOutput());
-  }
-  else
-  {
-    EncodeSTL(stl, *surface->GetOutput());
-  }
-
-  return true;
+  return EncodeStructureSetMesh(stl, volume.Get(), resolution, smooth);
 }
 
 
@@ -1218,15 +1232,93 @@ static void AddDefaultTagValue(Json::Value& target,
 }
 
 
-void Encode(OrthancPluginRestOutput* output,
-            const char* url,
-            const OrthancPluginHttpRequest* request)
+static void CallCreateDicom(Json::Value& answer,
+                            const std::string& stl,
+                            const Json::Value& body,
+                            const std::string& parentStudy,
+                            const std::string& defaultSeriesDescription,
+                            const std::string& defaultFrameOfReferenceUid,
+                            const std::string& defaultTitle)
+{
+  static const char* const KEY_TAGS = "Tags";
+
+  Json::Value normalized = Json::objectValue;
+
+  if (body.isMember(KEY_TAGS))
+  {
+    const Json::Value& tags = body[KEY_TAGS];
+
+    if (tags.type() != Json::objectValue)
+    {
+      throw Orthanc::OrthancException(Orthanc::ErrorCode_BadRequest, "Tags must be provided as a JSON object");
+    }
+
+    std::vector<std::string> keys = tags.getMemberNames();
+    for (size_t i = 0; i < keys.size(); i++)
+    {
+      const Orthanc::DicomTag tag = Orthanc::FromDcmtkBridge::ParseTag(keys[i]);
+      normalized[tag.Format()] = tags[keys[i]];
+    }
+  }
+
+  if (!normalized.isMember(Orthanc::DICOM_TAG_SERIES_DESCRIPTION.Format()))
+  {
+    normalized[Orthanc::DICOM_TAG_SERIES_DESCRIPTION.Format()] = defaultSeriesDescription;
+  }
+
+  AddDefaultTagValue(normalized, Orthanc::DICOM_TAG_SERIES_NUMBER, "1");
+  AddDefaultTagValue(normalized, Orthanc::DICOM_TAG_FRAME_OF_REFERENCE_UID, defaultFrameOfReferenceUid);
+  AddDefaultTagValue(normalized, Orthanc::DICOM_TAG_INSTANCE_NUMBER, "1");
+
+  AddDefaultTagValue(normalized, DCM_BurnedInAnnotation, "NO");
+  AddDefaultTagValue(normalized, DCM_DeviceSerialNumber, ORTHANC_STL_VERSION);
+  AddDefaultTagValue(normalized, DCM_DocumentTitle, defaultTitle);
+  AddDefaultTagValue(normalized, DCM_Manufacturer, "Orthanc STL plugin");
+  AddDefaultTagValue(normalized, DCM_ManufacturerModelName, "Orthanc STL plugin");
+  AddDefaultTagValue(normalized, DCM_PositionReferenceIndicator, "");
+  AddDefaultTagValue(normalized, DCM_SoftwareVersions, ORTHANC_STL_VERSION);
+  AddDefaultTagValue(normalized, DCM_ConceptNameCodeSequence, "");
+
+  std::string date, time;
+  Orthanc::SystemToolbox::GetNowDicom(date, time, true /* use UTC time (not local time) */);
+  AddDefaultTagValue(normalized, DCM_AcquisitionDateTime, date + time);
+
+  const Orthanc::DicomTag MEASUREMENT_UNITS_CODE_SEQUENCE(DCM_MeasurementUnitsCodeSequence.getGroup(),
+                                                          DCM_MeasurementUnitsCodeSequence.getElement());
+
+  if (!normalized.isMember(MEASUREMENT_UNITS_CODE_SEQUENCE.Format()))
+  {
+    Json::Value item;
+    item["CodeValue"] = "mm";
+    item["CodingSchemeDesignator"] = "UCUM";
+    item["CodeMeaning"] = defaultTitle;
+
+    normalized[MEASUREMENT_UNITS_CODE_SEQUENCE.Format()].append(item);
+  }
+
+  std::string content;
+  Orthanc::Toolbox::EncodeDataUriScheme(content, Orthanc::MIME_STL, stl);
+
+  Json::Value create;
+  create["Content"] = content;
+  create["Parent"] = parentStudy;
+  create["Tags"] = normalized;
+
+  if (!OrthancPlugins::RestApiPost(answer, "/tools/create-dicom", create.toStyledString(), false))
+  {
+    throw Orthanc::OrthancException(Orthanc::ErrorCode_BadRequest, "Cannot create DICOM from STL");
+  }
+}
+
+
+void EncodeStructureSet(OrthancPluginRestOutput* output,
+                        const char* url,
+                        const OrthancPluginHttpRequest* request)
 {
   static const char* const KEY_INSTANCE = "Instance";
   static const char* const KEY_RESOLUTION = "Resolution";
   static const char* const KEY_ROI_NAMES = "RoiNames";
   static const char* const KEY_SMOOTH = "Smooth";
-  static const char* const KEY_TAGS = "Tags";
 
   if (request->method != OrthancPluginHttpMethod_Post)
   {
@@ -1262,116 +1354,48 @@ void Encode(OrthancPluginRestOutput* output,
   }
   else
   {
-    std::string content;
-    Orthanc::Toolbox::EncodeDataUriScheme(content, "model/stl", stl);
+    std::string seriesDescription;
 
-    Json::Value normalized = Json::objectValue;
-
-    if (body.isMember(KEY_TAGS))
+    if (dicom->GetTagValue(seriesDescription, Orthanc::DICOM_TAG_SERIES_DESCRIPTION))
     {
-      const Json::Value& tags = body[KEY_TAGS];
-      if (tags.type() != Json::objectValue)
-      {
-        throw Orthanc::OrthancException(Orthanc::ErrorCode_BadRequest, "Tags must be provided as a JSON object");
-      }
-
-      std::vector<std::string> keys = tags.getMemberNames();
-      for (size_t i = 0; i < keys.size(); i++)
-      {
-        const Orthanc::DicomTag tag = Orthanc::FromDcmtkBridge::ParseTag(keys[i]);
-        normalized[tag.Format()] = tags[keys[i]];
-      }
+      seriesDescription += ": ";
+    }
+    else
+    {
+      seriesDescription.clear();
     }
 
-    if (!normalized.isMember(Orthanc::DICOM_TAG_SERIES_DESCRIPTION.Format()))
+    bool first = true;
+    for (std::set<std::string>::const_iterator it = roiNames.begin(); it != roiNames.end(); ++it)
     {
-      std::string description;
-
-      if (dicom->GetTagValue(description, Orthanc::DICOM_TAG_SERIES_DESCRIPTION))
+      if (first)
       {
-        description += ": ";
+        first = false;
       }
       else
       {
-        description.clear();
+        seriesDescription += ", ";
       }
 
-      bool first = true;
-      for (std::set<std::string>::const_iterator it = roiNames.begin(); it != roiNames.end(); ++it)
-      {
-        if (first)
-        {
-          first = false;
-        }
-        else
-        {
-          description += ", ";
-        }
-
-        description += *it;
-      }
-
-      normalized[Orthanc::DICOM_TAG_SERIES_DESCRIPTION.Format()] = description;
+      seriesDescription += *it;
     }
 
-    AddDefaultTagValue(normalized, Orthanc::DICOM_TAG_SERIES_NUMBER, "1");
-
-    std::string s;
+    std::string frameOfReferenceUid;
     if (structureSet.HasFrameOfReferenceUid())
     {
-      s = structureSet.GetFrameOfReferenceUid();
+      frameOfReferenceUid = structureSet.GetFrameOfReferenceUid();
     }
     else
     {
-      s = Orthanc::FromDcmtkBridge::GenerateUniqueIdentifier(Orthanc::ResourceType_Instance);
+      frameOfReferenceUid = Orthanc::FromDcmtkBridge::GenerateUniqueIdentifier(Orthanc::ResourceType_Instance);
     }
-
-    AddDefaultTagValue(normalized, Orthanc::DICOM_TAG_FRAME_OF_REFERENCE_UID, s);
-    AddDefaultTagValue(normalized, Orthanc::DICOM_TAG_INSTANCE_NUMBER, "1");
-
-    const std::string title = "STL model generated from DICOM RT-STRUCT";
-
-    AddDefaultTagValue(normalized, DCM_BurnedInAnnotation, "NO");
-    AddDefaultTagValue(normalized, DCM_DeviceSerialNumber, ORTHANC_STL_VERSION);
-    AddDefaultTagValue(normalized, DCM_DocumentTitle, title);
-    AddDefaultTagValue(normalized, DCM_Manufacturer, "Orthanc STL plugin");
-    AddDefaultTagValue(normalized, DCM_ManufacturerModelName, "Orthanc STL plugin");
-    AddDefaultTagValue(normalized, DCM_PositionReferenceIndicator, "");
-    AddDefaultTagValue(normalized, DCM_SoftwareVersions, ORTHANC_STL_VERSION);
-    AddDefaultTagValue(normalized, DCM_ConceptNameCodeSequence, "");
-
-    std::string date, time;
-    Orthanc::SystemToolbox::GetNowDicom(date, time, true /* use UTC time (not local time) */);
-    AddDefaultTagValue(normalized, DCM_AcquisitionDateTime, date + time);
-
-    const Orthanc::DicomTag MEASUREMENT_UNITS_CODE_SEQUENCE(DCM_MeasurementUnitsCodeSequence.getGroup(),
-                                                            DCM_MeasurementUnitsCodeSequence.getElement());
-
-    if (!normalized.isMember(MEASUREMENT_UNITS_CODE_SEQUENCE.Format()))
-    {
-      Json::Value item;
-      item["CodeValue"] = "mm";
-      item["CodingSchemeDesignator"] = "UCUM";
-      item["CodeMeaning"] = title;
-
-      normalized[MEASUREMENT_UNITS_CODE_SEQUENCE.Format()].append(item);
-    }
-
-    Json::Value create;
-    create["Content"] = content;
-    create["Parent"] = structureSet.HashStudy();
-    create["Tags"] = normalized;
 
     Json::Value answer;
-    if (OrthancPlugins::RestApiPost(answer, "/tools/create-dicom", create.toStyledString(), false))
-    {
-      std::string s = answer.toStyledString();
-      OrthancPluginAnswerBuffer(OrthancPlugins::GetGlobalContext(), output, s.c_str(), s.size(), Orthanc::MIME_JSON);
-    }
-    else
-    {
-      throw Orthanc::OrthancException(Orthanc::ErrorCode_BadRequest, "Cannot create DICOM from STL");
-    }
+    CallCreateDicom(answer, stl, body, structureSet.HashStudy(), seriesDescription,
+                    frameOfReferenceUid, "STL model generated from DICOM RT-STRUCT");
+
+    std::string s = answer.toStyledString();
+    OrthancPluginAnswerBuffer(OrthancPlugins::GetGlobalContext(), output, s.c_str(), s.size(), Orthanc::MIME_JSON);
   }
 }
 
@@ -1538,7 +1562,7 @@ extern "C"
 
     if (hasCreateDicomStl_)
     {
-      OrthancPlugins::RegisterRestCallback<Encode>("/stl/encode", true);
+      OrthancPlugins::RegisterRestCallback<EncodeStructureSet>("/stl/encode", true);
     }
 
     // Extend the default Orthanc Explorer with custom JavaScript for STL
