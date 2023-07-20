@@ -65,7 +65,8 @@ scene.add(light2);
   
 const loader = new STLLoader()
 loader.load(
-  '../../instances/' + instanceId + '/content/0042-0011',
+  //'../../instances/' + instanceId + '/content/0042-0011',
+  '../../instances/' + instanceId + '/stl',
   function (geometry) {
     const frustumSize = 200;
 
