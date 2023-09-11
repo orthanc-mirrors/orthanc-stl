@@ -90,7 +90,7 @@ else()
       -DFILE_OFFSET_BITS=64
 
       # This simply disables HDF5, which is not used in Orthanc
-      -DVTK_USE_SYSTEM_HDF5=ON
+      -DVTK_USE_SYSTEM_HDF5=OFF
       )
   else()
     add_custom_target(VTKCompileTools)  # Empty target
