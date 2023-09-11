@@ -89,8 +89,22 @@ else()
       -DKWSYS_LFS_WORKS__TRYRUN_OUTPUT=""
       -DFILE_OFFSET_BITS=64
 
-      # This simply disables HDF5, which is not used in Orthanc
+      # This disables HDF5, which is not used in Orthanc
       -DVTK_USE_SYSTEM_HDF5=OFF
+
+      # Some raw guesses to make CMake happy, could be incorrect!
+      -DHAVE_IOEO_EXITCODE=0
+      -DHDF5_PRINTF_LL_TEST_RUN=0
+      -DH5_LDOUBLE_TO_INTEGER_WORKS_RUN=0
+      -DH5_ULONG_TO_FLOAT_ACCURATE_RUN=0
+      -DH5_FP_TO_ULLONG_ACCURATE_RUN=0
+      -DH5_FP_TO_ULLONG_RIGHT_MAXIMUM_RUN=0
+      -DH5_LDOUBLE_TO_UINT_ACCURATE_RUN=0
+      -DH5_ULLONG_TO_LDOUBLE_PRECISION_RUN=0
+      -DH5_FP_TO_INTEGER_OVERFLOW_WORKS_RUN=0
+      -DH5_LDOUBLE_TO_LLONG_ACCURATE_RUN=0
+      -DH5_LLONG_TO_LDOUBLE_CORRECT_RUN=0
+      -DH5_NO_ALIGNMENT_RESTRICTIONS_RUN=0
       )
   else()
     add_custom_target(VTKCompileTools)  # Empty target
