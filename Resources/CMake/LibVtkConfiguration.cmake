@@ -110,7 +110,10 @@ else()
       -DH5_LLONG_TO_LDOUBLE_CORRECT_RUN__TRYRUN_OUTPUT=
       -DH5_NO_ALIGNMENT_RESTRICTIONS_RUN=0
       -DH5_NO_ALIGNMENT_RESTRICTIONS_RUN__TRYRUN_OUTPUT=
+      -DH5_PRINTF_LL_WIDTH="unknown"
       -DH5_ULLONG_TO_LDOUBLE_PRECISION_RUN=0
+      -DH5_ULLONG_TO_LDOUBLE_PRECISION_RUN=0
+      -DH5_ULLONG_TO_LDOUBLE_PRECISION_RUN__TRYRUN_OUTPUT=
       -DH5_ULONG_TO_FLOAT_ACCURATE_RUN=0
       -DH5_ULONG_TO_FLOAT_ACCURATE_RUN__TRYRUN_OUTPUT=
       -DHDF5_PRINTF_LL_TEST_RUN=0
@@ -193,7 +196,12 @@ else()
   ExternalProject_Get_Property(VTK binary_dir)
   ExternalProject_Get_Property(VTK source_dir)
 
-  link_directories(${binary_dir}/lib)
+  if (${CMAKE_SYSTEM_NAME} STREQUAL "Darwin")
+    # TODO - This looks very strange
+    link_directories(${binary_dir}/../Debug)
+  else()
+    link_directories(${binary_dir}/lib)
+  endif()
 
   foreach(dir IN ITEMS
       Common/Core
