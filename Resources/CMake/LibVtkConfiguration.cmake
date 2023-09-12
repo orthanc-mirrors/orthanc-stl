@@ -71,7 +71,7 @@ else()
       -DCMAKE_C_COMPILER=gcc
 
       BUILD_COMMAND
-      ${CMAKE_COMMAND} --build <BINARY_DIR> --config <CONFIG> --parallel ${NumberOfPhysicalCores} -t
+      ${CMAKE_COMMAND} --build <BINARY_DIR> --config ${CMAKE_BUILD_TYPE} --parallel ${NumberOfPhysicalCores} -t
       VTKCompileToolsConfig.cmake
 
       INSTALL_COMMAND ""  # Skip the install step
@@ -149,7 +149,7 @@ else()
     -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}
 
     BUILD_COMMAND
-    ${CMAKE_COMMAND} --build <BINARY_DIR> --config <CONFIG> --parallel ${NumberOfPhysicalCores} -t
+    ${CMAKE_COMMAND} --build <BINARY_DIR> --config ${CMAKE_BUILD_TYPE} --parallel ${NumberOfPhysicalCores} -t
     vtkCommonCore
     vtkCommonDataModel
     vtkCommonMath
@@ -196,12 +196,7 @@ else()
   ExternalProject_Get_Property(VTK binary_dir)
   ExternalProject_Get_Property(VTK source_dir)
 
-  if (${CMAKE_SYSTEM_NAME} STREQUAL "Darwin")
-    # TODO - This looks very strange
-    link_directories(${binary_dir}/../Debug)
-  else()
-    link_directories(${binary_dir}/lib)
-  endif()
+  link_directories(${binary_dir}/lib)
 
   foreach(dir IN ITEMS
       Common/Core
