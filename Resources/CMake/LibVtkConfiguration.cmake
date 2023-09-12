@@ -66,12 +66,12 @@ else()
       SOURCE_DIR "${VTK_SOURCES_DIR}"
 
       CMAKE_ARGS
-      -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
+      -DCMAKE_BUILD_TYPE:STRING=${VTK_BUILD_TYPE}
       -DCMAKE_CXX_COMPILER=g++
       -DCMAKE_C_COMPILER=gcc
 
       BUILD_COMMAND
-      ${CMAKE_COMMAND} --build <BINARY_DIR> --config ${CMAKE_BUILD_TYPE} --parallel ${NumberOfPhysicalCores} -t
+      ${CMAKE_COMMAND} --build <BINARY_DIR> --config ${VTK_BUILD_TYPE} --parallel ${NumberOfPhysicalCores} -t
       VTKCompileToolsConfig.cmake
 
       INSTALL_COMMAND ""  # Skip the install step
@@ -137,7 +137,7 @@ else()
 
     CMAKE_ARGS
     ${VTKCMakeFlags}
-    -DCMAKE_BUILD_TYPE:STRING=${CMAKE_BUILD_TYPE}
+    -DCMAKE_BUILD_TYPE:STRING=${VTK_BUILD_TYPE}
     -DBUILD_SHARED_LIBS=OFF
     -DVTK_Group_Rendering=OFF
 
@@ -149,7 +149,7 @@ else()
     -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}
 
     BUILD_COMMAND
-    ${CMAKE_COMMAND} --build <BINARY_DIR> --config ${CMAKE_BUILD_TYPE} --parallel ${NumberOfPhysicalCores} -t
+    ${CMAKE_COMMAND} --build <BINARY_DIR> --config ${VTK_BUILD_TYPE} --parallel ${NumberOfPhysicalCores} -t
     vtkCommonCore
     vtkCommonDataModel
     vtkCommonMath

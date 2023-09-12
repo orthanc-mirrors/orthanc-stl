@@ -65,6 +65,12 @@ SET(USE_SYSTEM_ORTHANC_SDK ON CACHE BOOL "Use the system version of the Orthanc 
 set(USE_SYSTEM_NIFTILIB ON CACHE BOOL "Use the system version of niftilib")
 set(USE_SYSTEM_VTK ON CACHE BOOL "Use the system version of VTK")
 
+# Option "VTK_BUILD_TYPE" is necessary for multi-configuration
+# compilers (such as XCode or MSVC), for "externalproject_add()" to
+# choose the correct build type (which is not known when running
+# "cmake" to configure the project)
+set(VTK_BUILD_TYPE "Release" CACHE STRING "Build type to be used for static builds of VTK (should be \"Debug\" or \"Release\")")
+
 
 #####################################################################
 ## Download and setup the Orthanc framework
