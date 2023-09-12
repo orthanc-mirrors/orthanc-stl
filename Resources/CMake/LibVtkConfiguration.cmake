@@ -71,7 +71,7 @@ else()
       -DCMAKE_C_COMPILER=gcc
 
       BUILD_COMMAND
-      ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel ${NumberOfPhysicalCores} -t
+      ${CMAKE_COMMAND} --build <BINARY_DIR> --config ${CMAKE_BUILD_TYPE} --parallel ${NumberOfPhysicalCores} -t
       VTKCompileToolsConfig.cmake
 
       INSTALL_COMMAND ""  # Skip the install step
@@ -149,7 +149,7 @@ else()
     -DCMAKE_OSX_ARCHITECTURES=${CMAKE_OSX_ARCHITECTURES}
 
     BUILD_COMMAND
-    ${CMAKE_COMMAND} --build <BINARY_DIR> --parallel ${NumberOfPhysicalCores} -t
+    ${CMAKE_COMMAND} --build <BINARY_DIR> --config ${CMAKE_BUILD_TYPE} --parallel ${NumberOfPhysicalCores} -t
     vtkCommonCore
     vtkCommonDataModel
     vtkCommonMath
