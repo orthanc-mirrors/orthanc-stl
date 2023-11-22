@@ -79,6 +79,10 @@ namespace OrthancPlugins
     }
   }
 
+  void ResetGlobalContext()
+  {
+    globalContext_ = NULL;
+  }
 
   bool HasGlobalContext()
   {
@@ -1670,15 +1674,16 @@ namespace OrthancPlugins
       return true;
     }
 
-    // Parse the version
-    int aa, bb, cc;
-    if (
 #ifdef _MSC_VER
-      sscanf_s
+#define ORTHANC_SCANF sscanf_s
 #else
-      sscanf
+#define ORTHANC_SCANF sscanf
 #endif
-      (version, "%4d.%4d.%4d", &aa, &bb, &cc) != 3 ||
+
+    // Parse the version
+    int aa, bb, cc = 0;
+    if ((ORTHANC_SCANF(version, "%4d.%4d.%4d", &aa, &bb, &cc) != 3 &&
+         ORTHANC_SCANF(version, "%4d.%4d", &aa, &bb) != 2) ||
       aa < 0 ||
       bb < 0 ||
       cc < 0)

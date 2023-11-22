@@ -51,7 +51,7 @@ fi
 if [ ! -f "${ROOT_DIR}/Three/${PACKAGE}.tar.gz" ]; then
     mkdir -p "${ROOT_DIR}/Three"
     ( cd ${ROOT_DIR}/Three && \
-          wget https://orthanc.uclouvain.be/third-party-downloads/${PACKAGE}.tar.gz )
+          wget https://orthanc.uclouvain.be/downloads/third-party-downloads/${PACKAGE}.tar.gz )
 fi
 
 mkdir -p ${ROOT_DIR}/Three/dist/

@@ -41,7 +41,7 @@ else()
 
   DownloadPackage(
     "${VTK_MD5}"
-    "https://orthanc.uclouvain.be/third-party-downloads/VTK-${VTK_MAJOR}.${VTK_MINOR}.${VTK_REVISION}.tar.gz"
+    "https://orthanc.uclouvain.be/downloads/third-party-downloads/VTK-${VTK_MAJOR}.${VTK_MINOR}.${VTK_REVISION}.tar.gz"
     "${VTK_SOURCES_DIR}")
 
   if (CMAKE_TOOLCHAIN_FILE)
