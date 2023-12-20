@@ -22,7 +22,7 @@ if (STATIC_BUILD OR NOT USE_SYSTEM_NIFTILIB)
   set(NIFTILIB_SOURCES_DIR ${CMAKE_BINARY_DIR}/nifti_clib-3.0.0)
   DownloadPackage(
     "ee40068103775a181522166e435ee82d"
-    "https://third-party.orthanc-labs.com/nifti_clib-3.0.0.tar.gz"
+    "https://orthanc.uclouvain.be/downloads/third-party-downloads/nifti_clib-3.0.0.tar.gz"
     "${NIFTILIB_SOURCES_DIR}")
 
   include_directories(
