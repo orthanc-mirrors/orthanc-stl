@@ -50,6 +50,8 @@
 
 #include <nifti1_io.h>
 
+#define ORTHANC_PLUGIN_NAME  "stl"
+
 
 // Forward declaration
 void ReadStaticAsset(std::string& target,
@@ -1632,7 +1634,7 @@ extern "C"
                    << ") is insufficient to create DICOM STL, it should be above 1.12.1";
     }    
 
-    OrthancPluginSetDescription(context, "STL plugin for Orthanc.");
+    OrthancPlugins::SetDescription(ORTHANC_PLUGIN_NAME, "STL plugin for Orthanc.");
 
     OrthancPlugins::RegisterRestCallback<ServeFile>("/stl/app/(.*)", true);
     OrthancPlugins::RegisterRestCallback<ExtractStl>("/instances/([0-9a-f-]+)/stl", true);
@@ -1654,7 +1656,7 @@ extern "C"
       dictionary["HAS_CREATE_DICOM_STL"] = (hasCreateDicomStl_ ? "true" : "false");
       explorer = Orthanc::Toolbox::SubstituteVariables(explorer, dictionary);
 
-      OrthancPluginExtendOrthancExplorer(OrthancPlugins::GetGlobalContext(), explorer.c_str());
+      OrthancPlugins::ExtendOrthancExplorer(ORTHANC_PLUGIN_NAME, explorer);
     }
 
     return 0;
@@ -1669,7 +1671,7 @@ extern "C"
 
   ORTHANC_PLUGINS_API const char* OrthancPluginGetName()
   {
-    return "stl";
+    return ORTHANC_PLUGIN_NAME;
   }
 
 
