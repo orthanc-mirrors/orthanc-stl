@@ -22,6 +22,7 @@
  **/
 
 
+#include "StructurePolygon.h"
 #include "VTKToolbox.h"
 #include "Vector3D.h"
 #include "Toolbox.h"
@@ -39,6 +40,8 @@
 #include <OrthancFramework.h>
 #include <SerializationToolbox.h>
 #include <SystemToolbox.h>
+
+#include <vtkNew.h>
 
 #include <boost/thread/shared_mutex.hpp>
 
@@ -147,233 +150,9 @@ void ServeFile(OrthancPluginRestOutput* output,
 
 
 
-#include <dcmtk/dcmdata/dcdeftag.h>
 #include <dcmtk/dcmdata/dcfilefo.h>
-#include <dcmtk/dcmdata/dcitem.h>
 #include <dcmtk/dcmdata/dcsequen.h>
 #include <dcmtk/dcmdata/dcuid.h>
-
-
-static std::string GetStringValue(DcmItem& item,
-                                  const DcmTagKey& key)
-{
-  const char* s = NULL;
-  if (!item.findAndGetString(key, s).good() ||
-      s == NULL)
-  {
-    throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat);
-  }
-  else
-  {
-    return Orthanc::Toolbox::StripSpaces(s);
-  }
-}
-
-
-static void ListStructuresNames(std::set<std::string>& target,
-                                Orthanc::ParsedDicomFile& source)
-{
-  target.clear();
-
-  DcmSequenceOfItems* sequence = NULL;
-  if (!source.GetDcmtkObject().getDataset()->findAndGetSequence(DCM_StructureSetROISequence, sequence).good() ||
-      sequence == NULL)
-  {
-    throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat);
-  }
-
-  for (unsigned long i = 0; i < sequence->card(); i++)
-  {
-    DcmItem* item = sequence->getItem(i);
-    if (item == NULL)
-    {
-      throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat);
-    }
-    else
-    {
-      target.insert(GetStringValue(*item, DCM_ROIName));
-    }
-  }
-}
-
-
-class StructurePolygon : public boost::noncopyable
-{
-private:
-  std::string            roiName_;
-  std::string            referencedSopInstanceUid_;
-  uint8_t                red_;
-  uint8_t                green_;
-  uint8_t                blue_;
-  std::vector<Vector3D>  points_;
-
-public:
-  StructurePolygon(Orthanc::ParsedDicomFile& dicom,
-                   unsigned long roiIndex,
-                   unsigned long contourIndex)
-  {
-    DcmDataset& dataset = *dicom.GetDcmtkObject().getDataset();
-
-    DcmItem* structure = NULL;
-    DcmItem* roi = NULL;
-    DcmItem* contour = NULL;
-    DcmSequenceOfItems* referenced = NULL;
-
-    if (!dataset.findAndGetSequenceItem(DCM_StructureSetROISequence, structure, roiIndex).good() ||
-        structure == NULL ||
-        !dataset.findAndGetSequenceItem(DCM_ROIContourSequence, roi, roiIndex).good() ||
-        roi == NULL ||
-        !roi->findAndGetSequenceItem(DCM_ContourSequence, contour, contourIndex).good() ||
-        contour == NULL ||
-        !contour->findAndGetSequence(DCM_ContourImageSequence, referenced).good() ||
-        referenced == NULL ||
-        referenced->card() != 1)
-    {
-      throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat);
-    }
-
-    roiName_ = GetStringValue(*structure, DCM_ROIName);
-    referencedSopInstanceUid_ = GetStringValue(*referenced->getItem(0), DCM_ReferencedSOPInstanceUID);
-
-    if (GetStringValue(*contour, DCM_ContourGeometricType) != "CLOSED_PLANAR")
-    {
-      throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat);
-    }
-
-    {
-      std::vector<std::string> tokens;
-      Orthanc::Toolbox::TokenizeString(tokens, GetStringValue(*roi, DCM_ROIDisplayColor), '\\');
-
-      uint32_t r, g, b;
-      if (tokens.size() != 3 ||
-          !Orthanc::SerializationToolbox::ParseFirstUnsignedInteger32(r, tokens[0]) ||
-          !Orthanc::SerializationToolbox::ParseFirstUnsignedInteger32(g, tokens[1]) ||
-          !Orthanc::SerializationToolbox::ParseFirstUnsignedInteger32(b, tokens[2]) ||
-          r > 255 ||
-          g > 255 ||
-          b > 255)
-      {
-        throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat);
-      }
-
-      red_ = r;
-      green_ = g;
-      blue_ = b;
-    }
-
-    {
-      std::vector<std::string> tokens;
-      Orthanc::Toolbox::TokenizeString(tokens, GetStringValue(*contour, DCM_ContourData), '\\');
-
-      const std::string s = GetStringValue(*contour, DCM_NumberOfContourPoints);
-
-      uint32_t countPoints;
-      if (!Orthanc::SerializationToolbox::ParseUnsignedInteger32(countPoints, s) ||
-          tokens.size() != 3 * countPoints)
-      {
-        throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat);
-      }
-
-      points_.reserve(countPoints);
-
-      for (size_t i = 0; i < tokens.size(); i += 3)
-      {
-        double x, y, z;
-        if (!Toolbox::MyParseDouble(x, tokens[i]) ||
-            !Toolbox::MyParseDouble(y, tokens[i + 1]) ||
-            !Toolbox::MyParseDouble(z, tokens[i + 2]))
-        {
-          throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat);
-        }
-
-        points_.push_back(Vector3D(x, y, z));
-      }
-
-      assert(points_.size() == countPoints);
-    }
-  }
-
-  const std::string& GetRoiName() const
-  {
-    return roiName_;
-  }
-
-  const std::string& GetReferencedSopInstanceUid() const
-  {
-    return referencedSopInstanceUid_;
-  }
-
-  size_t GetPointsCount() const
-  {
-    return points_.size();
-  }
-
-  const Vector3D& GetPoint(size_t i) const
-  {
-    if (i >= points_.size())
-    {
-      throw Orthanc::OrthancException(Orthanc::ErrorCode_ParameterOutOfRange);
-    }
-    else
-    {
-      return points_[i];
-    }
-  }
-
-  bool IsCoplanar(Vector3D& normal) const
-  {
-    if (points_.size() < 3)
-    {
-      return false;
-    }
-
-    bool hasNormal = false;
-
-    for (size_t i = 0; i < points_.size(); i++)
-    {
-      normal = Vector3D::CrossProduct(Vector3D(points_[1], points_[0]),
-                                      Vector3D(points_[2], points_[0]));
-      if (!Toolbox::IsNear(normal.ComputeNorm(), 0))
-      {
-        normal.Normalize();
-        hasNormal = true;
-      }
-    }
-
-    if (!hasNormal)
-    {
-      return false;
-    }
-
-    double a = Vector3D::DotProduct(points_[0], normal);
-
-    for (size_t i = 1; i < points_.size(); i++)
-    {
-      double b = Vector3D::DotProduct(points_[i], normal);
-      if (!Toolbox::IsNear(a, b))
-      {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  void Add(Extent2D& extent,
-           const Vector3D& axisX,
-           const Vector3D& axisY) const
-  {
-    assert(Toolbox::IsNear(1, axisX.ComputeNorm()));
-    assert(Toolbox::IsNear(1, axisY.ComputeNorm()));
-
-    for (size_t i = 0; i < points_.size(); i++)
-    {
-      extent.Add(Vector3D::DotProduct(axisX, points_[i]),
-                 Vector3D::DotProduct(axisY, points_[i]));
-    }
-  }
-};
-
 
 
 class StructureSet : public boost::noncopyable
@@ -392,10 +171,10 @@ public:
     hasFrameOfReferenceUid_(false)
   {
     DcmDataset& dataset = *dicom.GetDcmtkObject().getDataset();
-    patientId_ = GetStringValue(dataset, DCM_PatientID);
-    studyInstanceUid_ = GetStringValue(dataset, DCM_StudyInstanceUID);
-    seriesInstanceUid_ = GetStringValue(dataset, DCM_SeriesInstanceUID);
-    sopInstanceUid_ = GetStringValue(dataset, DCM_SOPInstanceUID);
+    patientId_ = STLToolbox::GetStringValue(dataset, DCM_PatientID);
+    studyInstanceUid_ = STLToolbox::GetStringValue(dataset, DCM_StudyInstanceUID);
+    seriesInstanceUid_ = STLToolbox::GetStringValue(dataset, DCM_SeriesInstanceUID);
+    sopInstanceUid_ = STLToolbox::GetStringValue(dataset, DCM_SOPInstanceUID);
 
     DcmSequenceOfItems* frame = NULL;
     if (!dataset.findAndGetSequence(DCM_ReferencedFrameOfReferenceSequence, frame).good() ||
@@ -523,6 +302,33 @@ public:
       throw Orthanc::OrthancException(Orthanc::ErrorCode_BadSequenceOfCalls);
     }
   }
+
+  // This static method is faster than constructing the full "StructureSet" object
+  static void ListStructuresNames(std::set<std::string>& target,
+                                  Orthanc::ParsedDicomFile& source)
+  {
+    target.clear();
+
+    DcmSequenceOfItems* sequence = NULL;
+    if (!source.GetDcmtkObject().getDataset()->findAndGetSequence(DCM_StructureSetROISequence, sequence).good() ||
+        sequence == NULL)
+    {
+      throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat);
+    }
+
+    for (unsigned long i = 0; i < sequence->card(); i++)
+    {
+      DcmItem* item = sequence->getItem(i);
+      if (item == NULL)
+      {
+        throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat);
+      }
+      else
+      {
+        target.insert(STLToolbox::GetStringValue(*item, DCM_ROIName));
+      }
+    }
+  }
 };
 
 
@@ -555,7 +361,7 @@ private:
 
     double d = (z - minProjectionAlongNormal_) / slicesSpacing_;
 
-    if (Toolbox::IsNear(d, round(d)))
+    if (STLToolbox::IsNear(d, round(d)))
     {
       if (d < 0.0 ||
           d > static_cast<double>(slicesCount_) - 1.0)
@@ -623,7 +429,7 @@ public:
     // Only keep unique projections
 
     std::sort(projections.begin(), projections.end());
-    Toolbox::RemoveDuplicateValues(projections);
+    STLToolbox::RemoveDuplicateValues(projections);
     assert(!projections.empty());
 
     if (projections.size() == 1)
@@ -650,7 +456,7 @@ public:
       }
 
       std::sort(spacings.begin(), spacings.end());
-      Toolbox::RemoveDuplicateValues(spacings);
+      STLToolbox::RemoveDuplicateValues(spacings);
 
       if (spacings.empty())
       {
@@ -687,7 +493,7 @@ public:
       while (it != candidates.end())
       {
         double d = (projections[*it] - projections[reference]) / slicesSpacing_;
-        if (Toolbox::IsNear(d, round(d)))
+        if (STLToolbox::IsNear(d, round(d)))
         {
           countSupport ++;
         }
@@ -726,7 +532,7 @@ public:
     for (size_t i = 0; i < projections.size(); i++)
     {
       double d = (projections[i] - bestProjection) / slicesSpacing_;
-      if (Toolbox::IsNear(d, round(d)))
+      if (STLToolbox::IsNear(d, round(d)))
       {
         minProjectionAlongNormal_ = std::min(minProjectionAlongNormal_, projections[i]);
         maxProjectionAlongNormal_ = std::max(maxProjectionAlongNormal_, projections[i]);
@@ -734,7 +540,7 @@ public:
     }
 
     double d = (maxProjectionAlongNormal_ - minProjectionAlongNormal_) / slicesSpacing_;
-    if (Toolbox::IsNear(d, round(d)))
+    if (STLToolbox::IsNear(d, round(d)))
     {
       slicesCount_ = static_cast<size_t>(round(d)) + 1;
     }
@@ -902,12 +708,12 @@ static void GetReferencedVolumeAxes(Vector3D& axisX,
             double x1, x2, x3, y1, y2, y3;
 
             if (items.size() == 6 &&
-                Toolbox::MyParseDouble(x1, items[0]) &&
-                Toolbox::MyParseDouble(x2, items[1]) &&
-                Toolbox::MyParseDouble(x3, items[2]) &&
-                Toolbox::MyParseDouble(y1, items[3]) &&
-                Toolbox::MyParseDouble(y2, items[4]) &&
-                Toolbox::MyParseDouble(y3, items[5]))
+                STLToolbox::MyParseDouble(x1, items[0]) &&
+                STLToolbox::MyParseDouble(x2, items[1]) &&
+                STLToolbox::MyParseDouble(x3, items[2]) &&
+                STLToolbox::MyParseDouble(y1, items[3]) &&
+                STLToolbox::MyParseDouble(y2, items[4]) &&
+                STLToolbox::MyParseDouble(y3, items[5]))
             {
               axisX = Vector3D(x1, x2, x3);
               axisY = Vector3D(y1, y2, y3);
@@ -938,7 +744,7 @@ static bool EncodeStructureSetMesh(std::string& stl,
     throw Orthanc::OrthancException(Orthanc::ErrorCode_ParameterOutOfRange);
   }
 
-  if (!Toolbox::IsNear(1, geometry.GetSlicesNormal().ComputeNorm()))
+  if (!STLToolbox::IsNear(1, geometry.GetSlicesNormal().ComputeNorm()))
   {
     throw Orthanc::OrthancException(Orthanc::ErrorCode_InternalError);
   }
@@ -948,8 +754,8 @@ static bool EncodeStructureSetMesh(std::string& stl,
 
   Vector3D axisZ = Vector3D::CrossProduct(axisX, axisY);
 
-  if (!Toolbox::IsNear(1, axisX.ComputeNorm()) ||
-      !Toolbox::IsNear(1, axisY.ComputeNorm()) ||
+  if (!STLToolbox::IsNear(1, axisX.ComputeNorm()) ||
+      !STLToolbox::IsNear(1, axisY.ComputeNorm()) ||
       !Vector3D::AreParallel(axisZ, geometry.GetSlicesNormal()))
   {
     throw Orthanc::OrthancException(Orthanc::ErrorCode_InternalError);
@@ -1037,7 +843,7 @@ void ListStructures(OrthancPluginRestOutput* output,
   std::unique_ptr<Orthanc::ParsedDicomFile> dicom(LoadInstance(instanceId));
 
   std::set<std::string> names;
-  ListStructuresNames(names, *dicom);
+  StructureSet::ListStructuresNames(names, *dicom);
 
   Json::Value answer = Json::arrayValue;
 
@@ -1260,8 +1066,8 @@ void ExtractStl(OrthancPluginRestOutput* output,
   DcmDataset& dataset = *dicom->GetDcmtkObject().getDataset();
 
   std::string stl;
-  if (GetStringValue(dataset, DCM_MIMETypeOfEncapsulatedDocument) != Orthanc::MIME_STL ||
-      GetStringValue(dataset, DCM_SOPClassUID) != UID_EncapsulatedSTLStorage ||
+  if (STLToolbox::GetStringValue(dataset, DCM_MIMETypeOfEncapsulatedDocument) != Orthanc::MIME_STL ||
+      STLToolbox::GetStringValue(dataset, DCM_SOPClassUID) != UID_EncapsulatedSTLStorage ||
       !dicom->GetTagValue(stl, Orthanc::DICOM_TAG_ENCAPSULATED_DOCUMENT))
   {
     throw Orthanc::OrthancException(Orthanc::ErrorCode_BadRequest, "DICOM instance not encapsulating a STL model: " + instanceId);

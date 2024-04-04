@@ -22,13 +22,16 @@
  **/
 
 
-#include "Toolbox.h"
+#include "STLToolbox.h"
+
+#include <OrthancException.h>
+#include <Toolbox.h>
 
 #include <algorithm>
 #include <cmath>
 
 
-namespace Toolbox
+namespace STLToolbox
 {
   bool IsNear(double a,
               double b)
@@ -57,7 +60,7 @@ namespace Toolbox
       bool operator() (const double& a,
                        const double& b)
       {
-        return Toolbox::IsNear(a, b);
+        return IsNear(a, b);
       }
     };
   }
@@ -68,5 +71,21 @@ namespace Toolbox
     IsNearPredicate predicate;
     std::vector<double>::iterator last = std::unique(v.begin(), v.end(), predicate);
     v.erase(last, v.end());
+  }
+
+
+  std::string GetStringValue(DcmItem& item,
+                             const DcmTagKey& key)
+  {
+    const char* s = NULL;
+    if (!item.findAndGetString(key, s).good() ||
+        s == NULL)
+    {
+      throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat);
+    }
+    else
+    {
+      return Orthanc::Toolbox::StripSpaces(s);
+    }
   }
 }

@@ -73,7 +73,7 @@ double Vector3D::ComputeNorm() const
 void Vector3D::Normalize()
 {
   double norm = ComputeNorm();
-  if (!Toolbox::IsNear(norm, 0))
+  if (!STLToolbox::IsNear(norm, 0))
   {
     x_ /= norm;
     y_ /= norm;
@@ -101,10 +101,10 @@ double Vector3D::DotProduct(const Vector3D& a,
 bool Vector3D::AreParallel(const Vector3D& a,
                            const Vector3D& b)
 {
-  if (Toolbox::IsNear(a.ComputeSquaredNorm(), 1) &&
-      Toolbox::IsNear(b.ComputeSquaredNorm(), 1))
+  if (STLToolbox::IsNear(a.ComputeSquaredNorm(), 1) &&
+      STLToolbox::IsNear(b.ComputeSquaredNorm(), 1))
   {
-    return Toolbox::IsNear(std::abs(Vector3D::DotProduct(a, b)), 1);
+    return STLToolbox::IsNear(std::abs(Vector3D::DotProduct(a, b)), 1);
   }
   else
   {

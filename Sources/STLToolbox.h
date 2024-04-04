@@ -27,8 +27,11 @@
 #include <string>
 #include <vector>
 
+#include <dcmtk/dcmdata/dcdeftag.h>
+#include <dcmtk/dcmdata/dcitem.h>
 
-namespace Toolbox
+
+namespace STLToolbox
 {
   bool IsNear(double a,
               double b);
@@ -39,4 +42,7 @@ namespace Toolbox
                      const std::string& s);
 
   void RemoveDuplicateValues(std::vector<double>& v);
+
+  std::string GetStringValue(DcmItem& item,
+                             const DcmTagKey& key);
 }

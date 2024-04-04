@@ -30,12 +30,13 @@
 #include <OrthancException.h>
 #include <Toolbox.h>
 
-#include <vtkTriangle.h>
-#include <vtkImageResize.h>
 #include <vtkImageConstantPad.h>
+#include <vtkImageResize.h>
 #include <vtkMarchingCubes.h>
-#include <vtkSmoothPolyDataFilter.h>
+#include <vtkNew.h>
 #include <vtkPolyDataNormals.h>
+#include <vtkSmoothPolyDataFilter.h>
+#include <vtkTriangle.h>
 
 #include <nifti1_io.h>
 
