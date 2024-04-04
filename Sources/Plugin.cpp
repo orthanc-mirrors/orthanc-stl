@@ -26,6 +26,7 @@
 
 #include <EmbeddedResources.h>
 
+#include <DicomFormat/DicomInstanceHasher.h>
 #include <Compression/GzipCompressor.h>
 #include <ChunkedBuffer.h>
 #include <DicomParsing/FromDcmtkBridge.h>
@@ -51,6 +52,8 @@
 #include <nifti1_io.h>
 
 #define ORTHANC_PLUGIN_NAME  "stl"
+
+static const char* const STL_SOP_CLASS_UID = "1.2.840.10008.5.1.4.1.1.104.3";
 
 
 // Forward declaration
@@ -381,6 +384,8 @@ static bool MyParseDouble(double& value,
                           const std::string& s)
 {
 #if 1
+  // This version is much faster, as "ParseDouble()" internally uses
+  // "boost::lexical_cast<double>()"
   char* end = NULL;
   value = strtod(s.c_str(), &end);
   return (end == s.c_str() + s.size());
@@ -590,11 +595,6 @@ class StructureSet : public boost::noncopyable
 {
 private:
   std::vector<StructurePolygon*>  polygons_;
-  bool                            hasGeometry_;
-  Vector3D                        slicesNormal_;
-  double                          slicesSpacing_;
-  double                          minProjectionAlongNormal_;
-  double                          maxProjectionAlongNormal_;
   std::string                     patientId_;
   std::string                     studyInstanceUid_;
   std::string                     seriesInstanceUid_;
@@ -602,101 +602,8 @@ private:
   bool                            hasFrameOfReferenceUid_;
   std::string                     frameOfReferenceUid_;
 
-  void ComputeGeometry()
-  {
-    std::list<double> positionsList;
-    hasGeometry_ = false;
-
-    for (size_t i = 0; i < polygons_.size(); i++)
-    {
-      assert(polygons_[i] != NULL);
-
-      Vector3D n;
-      if (polygons_[i]->IsCoplanar(n))
-      {
-        const Vector3D& point = polygons_[i]->GetPoint(0);
-        double z = Vector3D::DotProduct(point, n);
-
-        if (!hasGeometry_)
-        {
-          hasGeometry_ = true;
-          slicesNormal_ = n;
-          minProjectionAlongNormal_ = z;
-          maxProjectionAlongNormal_ = z;
-        }
-        else if (!IsNear(std::abs(Vector3D::DotProduct(n, slicesNormal_)), 1))
-        {
-          hasGeometry_ = false;
-
-          // RT-STRUCT with non-parallel slices
-          throw Orthanc::OrthancException(Orthanc::ErrorCode_NotImplemented);
-        }
-        else
-        {
-          minProjectionAlongNormal_ = std::min(minProjectionAlongNormal_, z);
-          maxProjectionAlongNormal_ = std::max(maxProjectionAlongNormal_, z);
-        }
-
-        positionsList.push_back(Vector3D::DotProduct(n, point));
-      }
-    }
-
-    if (hasGeometry_)
-    {
-      std::vector<double> positions(positionsList.begin(), positionsList.end());
-      assert(!positions.empty());
-
-      std::sort(positions.begin(), positions.end());
-      RemoveDuplicateValues(positions);
-      assert(!positions.empty());
-
-      if (positions.size() == 1)
-      {
-        hasGeometry_ = false;
-        return;
-      }
-
-      std::vector<double> offsets;
-      offsets.resize(positions.size() - 1);
-
-      for (size_t i = 0; i < offsets.size(); i++)
-      {
-        offsets[i] = positions[i + 1] - positions[i];
-        assert(offsets[i] > 0);
-      }
-
-      std::sort(offsets.begin(), offsets.end());
-      RemoveDuplicateValues(offsets);
-
-      slicesSpacing_ = offsets[0];
-
-      for (size_t i = 1; i < offsets.size(); i++)
-      {
-        double d = offsets[i] / slicesSpacing_;
-        if (!IsNear(d, round(d)))
-        {
-          // Irregular spacing between the slices
-          hasGeometry_ = false;
-          break;
-        }
-      }
-    }
-  }
-
-  void CheckHasGeometry() const
-  {
-    if (!hasGeometry_)
-    {
-      throw Orthanc::OrthancException(Orthanc::ErrorCode_BadSequenceOfCalls);
-    }
-  }
-
 public:
   explicit StructureSet(Orthanc::ParsedDicomFile& dicom) :
-    hasGeometry_(false),
-    slicesSpacing_(0),
-    minProjectionAlongNormal_(0),
-    maxProjectionAlongNormal_(0),
     hasFrameOfReferenceUid_(false)
   {
     DcmDataset& dataset = *dicom.GetDcmtkObject().getDataset();
@@ -760,8 +667,6 @@ public:
     }
 
     assert(pos == countPolygons);
-
-    ComputeGeometry();
   }
 
   ~StructureSet()
@@ -795,9 +700,8 @@ public:
 
   std::string HashStudy() const
   {
-    std::string s;
-    Orthanc::Toolbox::ComputeSHA1(s, patientId_ + "|" + studyInstanceUid_);
-    return s;
+    Orthanc::DicomInstanceHasher hasher(patientId_, studyInstanceUid_, seriesInstanceUid_, sopInstanceUid_);
+    return hasher.HashStudy();
   }
 
   size_t GetPolygonsCount() const
@@ -818,106 +722,6 @@ public:
     }
   }
 
-  bool HasGeometry() const
-  {
-    return hasGeometry_;
-  }
-
-  const Vector3D& GetSlicesNormal() const
-  {
-    CheckHasGeometry();
-    return slicesNormal_;
-  }
-
-  double GetSlicesSpacing() const
-  {
-    CheckHasGeometry();
-    return slicesSpacing_;
-  }
-
-  double GetMinProjectionAlongNormal() const
-  {
-    CheckHasGeometry();
-    return minProjectionAlongNormal_;
-  }
-
-  double GetMaxProjectionAlongNormal() const
-  {
-    CheckHasGeometry();
-    return maxProjectionAlongNormal_;
-  }
-
-  double ProjectAlongNormal(const StructurePolygon& polygon) const
-  {
-    CheckHasGeometry();
-    return Vector3D::DotProduct(slicesNormal_, polygon.GetPoint(0));
-  }
-
-  size_t GetSlicesCount() const
-  {
-    CheckHasGeometry();
-    double c = (maxProjectionAlongNormal_ - minProjectionAlongNormal_) / slicesSpacing_;
-    assert(c >= 0);
-
-    if (!IsNear(c, round(c)))
-    {
-      throw Orthanc::OrthancException(Orthanc::ErrorCode_InternalError);
-    }
-    else
-    {
-      return static_cast<size_t>(round(c)) + 1;
-    }
-  }
-
-  bool LookupSliceIndex(size_t& slice,
-                        const StructurePolygon& polygon) const
-  {
-    CheckHasGeometry();
-
-    double z = ProjectAlongNormal(polygon);
-
-    if (z < minProjectionAlongNormal_ ||
-        z > maxProjectionAlongNormal_)
-    {
-      return false;
-    }
-    else
-    {
-      double c = (z - minProjectionAlongNormal_) / slicesSpacing_;
-
-      if (IsNear(c, round(c)))
-      {
-        slice = static_cast<size_t>(round(c));
-        return true;
-      }
-      else
-      {
-        return false;
-      }
-    }
-  }
-
-  bool LookupReferencedSopInstanceUid(std::string& sopInstanceUid) const
-  {
-    if (HasGeometry())
-    {
-      for (size_t i = 0; i < polygons_.size(); i++)
-      {
-        assert(polygons_[i] != NULL);
-
-        Vector3D n;
-        if (polygons_[i]->IsCoplanar(n) &&
-            Vector3D::DotProduct(n, slicesNormal_))
-        {
-          sopInstanceUid = polygons_[i]->GetReferencedSopInstanceUid();
-          return true;
-        }
-      }
-    }
-
-    return false;
-  }
-
   bool HasFrameOfReferenceUid() const
   {
     return hasFrameOfReferenceUid_;
@@ -933,6 +737,293 @@ public:
     {
       throw Orthanc::OrthancException(Orthanc::ErrorCode_BadSequenceOfCalls);
     }
+  }
+};
+
+
+class StructureSetGeometry : public boost::noncopyable
+{
+private:
+  bool      strict_;
+  Vector3D  slicesNormal_;
+  double    slicesSpacing_;
+  double    minProjectionAlongNormal_;
+  double    maxProjectionAlongNormal_;
+  size_t    slicesCount_;
+
+  static bool AreNormalsParallel(const Vector3D& a,
+                                 const Vector3D& b)
+  {
+    return IsNear(std::abs(Vector3D::DotProduct(a, b)), 1);
+  }
+
+  bool LookupProjectionIndex(size_t& index,
+                             double z) const
+  {
+    if (slicesCount_ == 0)
+    {
+      throw Orthanc::OrthancException(Orthanc::ErrorCode_InternalError);
+    }
+
+    if (z < minProjectionAlongNormal_ ||
+        z > maxProjectionAlongNormal_)
+    {
+      throw Orthanc::OrthancException(Orthanc::ErrorCode_ParameterOutOfRange);
+    }
+
+    assert(slicesSpacing_ > 0 &&
+           minProjectionAlongNormal_ < maxProjectionAlongNormal_);
+
+    double d = (z - minProjectionAlongNormal_) / slicesSpacing_;
+
+    if (IsNear(d, round(d)))
+    {
+      if (d < 0.0 ||
+          d > static_cast<double>(slicesCount_) - 1.0)
+      {
+        throw Orthanc::OrthancException(Orthanc::ErrorCode_InternalError);
+      }
+      else
+      {
+        index = static_cast<size_t>(round(d));
+        return true;
+      }
+    }
+    else
+    {
+      return false;
+    }
+  }
+
+public:
+  StructureSetGeometry(const StructureSet& structures,
+                       bool strict) :
+    strict_(strict)
+  {
+    bool isValid = false;
+
+    std::vector<double> projections;
+    projections.reserve(structures.GetPolygonsCount());
+
+    for (size_t i = 0; i < structures.GetPolygonsCount(); i++)
+    {
+      Vector3D normal;
+      if (structures.GetPolygon(i).IsCoplanar(normal))
+      {
+        // Initialize the normal of the whole volume, if need be
+        if (!isValid)
+        {
+          isValid = true;
+          slicesNormal_ = normal;
+        }
+
+        if (AreNormalsParallel(normal, slicesNormal_))
+        {
+          // This is a valid slice (it is parallel to the normal)
+          const Vector3D& point = structures.GetPolygon(i).GetPoint(0);
+          projections.push_back(Vector3D::DotProduct(point, slicesNormal_));
+        }
+        else
+        {
+          // RT-STRUCT with non-parallel slices
+          throw Orthanc::OrthancException(Orthanc::ErrorCode_NotImplemented);
+        }
+      }
+      else
+      {
+        // Ignore slices that are not coplanar
+      }
+    }
+
+    if (projections.empty())
+    {
+      throw Orthanc::OrthancException(Orthanc::ErrorCode_NotImplemented,
+                                      "Structure set without a valid geometry");
+    }
+
+    // Only keep unique projections
+
+    std::sort(projections.begin(), projections.end());
+    RemoveDuplicateValues(projections);
+    assert(!projections.empty());
+
+    if (projections.size() == 1)
+    {
+      // Volume with one single slice
+      minProjectionAlongNormal_ = projections[0];
+      maxProjectionAlongNormal_ = projections[0];
+      slicesSpacing_ = 1;   // Arbitrary value
+      slicesCount_ = 1;
+      return;
+    }
+
+
+    // Compute the most probable spacing between the slices
+
+    {
+      std::vector<double> spacings;
+      spacings.resize(projections.size() - 1);
+
+      for (size_t i = 0; i < spacings.size(); i++)
+      {
+        spacings[i] = projections[i + 1] - projections[i];
+        assert(spacings[i] > 0);
+      }
+
+      std::sort(spacings.begin(), spacings.end());
+      RemoveDuplicateValues(spacings);
+
+      if (spacings.empty())
+      {
+        throw Orthanc::OrthancException(Orthanc::ErrorCode_InternalError);
+      }
+
+      slicesSpacing_ = spacings[spacings.size() / 10];  // Take the 90% percentile of smallest spacings
+      assert(slicesSpacing_ > 0);
+    }
+
+
+    // Find the projection along the normal with the largest support
+
+    bool first = true;
+    size_t bestSupport;
+    double bestProjection;
+
+    std::list<size_t> candidates;
+    for (size_t i = 0; i < projections.size(); i++)
+    {
+      candidates.push_back(i);
+    }
+
+    while (!candidates.empty())
+    {
+      std::list<size_t> next;
+
+      size_t countSupport = 0;
+
+      std::list<size_t>::const_iterator it = candidates.begin();
+      size_t reference = *it;
+      it++;
+
+      while (it != candidates.end())
+      {
+        double d = (projections[*it] - projections[reference]) / slicesSpacing_;
+        if (IsNear(d, round(d)))
+        {
+          countSupport ++;
+        }
+        else
+        {
+          next.push_back(*it);
+        }
+
+        it++;
+      }
+
+      if (first ||
+          countSupport > bestSupport)
+      {
+        first = false;
+        bestSupport = countSupport;
+        bestProjection = projections[reference];
+      }
+
+      if (strict &&
+          !next.empty())
+      {
+        throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat,
+                                        "Structure set with multiple support, which is not allowed in Strict mode");
+      }
+
+      candidates.swap(next);
+    }
+
+
+    // Compute the range of the projections
+
+    minProjectionAlongNormal_ = bestProjection;
+    maxProjectionAlongNormal_ = bestProjection;
+
+    for (size_t i = 0; i < projections.size(); i++)
+    {
+      double d = (projections[i] - bestProjection) / slicesSpacing_;
+      if (IsNear(d, round(d)))
+      {
+        minProjectionAlongNormal_ = std::min(minProjectionAlongNormal_, projections[i]);
+        maxProjectionAlongNormal_ = std::max(maxProjectionAlongNormal_, projections[i]);
+      }
+    }
+
+    double d = (maxProjectionAlongNormal_ - minProjectionAlongNormal_) / slicesSpacing_;
+    if (IsNear(d, round(d)))
+    {
+      slicesCount_ = static_cast<size_t>(round(d)) + 1;
+    }
+    else
+    {
+      throw Orthanc::OrthancException(Orthanc::ErrorCode_InternalError);
+    }
+
+
+    // Sanity check
+
+    size_t a, b;
+    if (!LookupProjectionIndex(a, minProjectionAlongNormal_) ||
+        !LookupProjectionIndex(b, maxProjectionAlongNormal_) ||
+        a != 0 ||
+        b + 1 != slicesCount_)
+    {
+      throw Orthanc::OrthancException(Orthanc::ErrorCode_InternalError);
+    }
+  }
+
+  const Vector3D& GetSlicesNormal() const
+  {
+    return slicesNormal_;
+  }
+
+  double GetSlicesSpacing() const
+  {
+    return slicesSpacing_;
+  }
+
+  double GetMinProjectionAlongNormal() const
+  {
+    return minProjectionAlongNormal_;
+  }
+
+  double GetMaxProjectionAlongNormal() const
+  {
+    return maxProjectionAlongNormal_;
+  }
+
+  bool ProjectAlongNormal(double& z,
+                          const StructurePolygon& polygon) const
+  {
+    Vector3D normal;
+    if (polygon.IsCoplanar(normal) &&
+        AreNormalsParallel(normal, slicesNormal_))
+    {
+      z = Vector3D::DotProduct(polygon.GetPoint(0), slicesNormal_);
+      return true;
+    }
+    else
+    {
+      return false;
+    }
+  }
+
+  size_t GetSlicesCount() const
+  {
+    return slicesCount_;
+  }
+
+  bool LookupSliceIndex(size_t& slice,
+                        const StructurePolygon& polygon) const
+  {
+    double z;
+    return (ProjectAlongNormal(z, polygon) &&
+            LookupProjectionIndex(slice, z));
   }
 };
 
@@ -1081,28 +1172,24 @@ bool EncodeVolume(std::string& stl,
 
 bool EncodeStructureSetMesh(std::string& stl,
                             const StructureSet& structureSet,
+                            const StructureSetGeometry& geometry,
                             const std::set<std::string>& roiNames,
                             unsigned int resolution,
                             bool smooth)
 {
-  if (!structureSet.HasGeometry())
-  {
-    return false;
-  }
-
   if (resolution < 1)
   {
     throw Orthanc::OrthancException(Orthanc::ErrorCode_ParameterOutOfRange);
   }
 
-  if (!IsNear(1, structureSet.GetSlicesNormal().ComputeNorm()))
+  if (!IsNear(1, geometry.GetSlicesNormal().ComputeNorm()))
   {
     throw Orthanc::OrthancException(Orthanc::ErrorCode_InternalError);
   }
 
   // TODO - Axes could be retrieved from the referenced CT volume
   Vector3D axisX(1, 0, 0);
-  Vector3D axisY = Vector3D::CrossProduct(structureSet.GetSlicesNormal(), axisX);
+  Vector3D axisY = Vector3D::CrossProduct(geometry.GetSlicesNormal(), axisX);
 
   if (!IsNear(1, axisX.ComputeNorm()) ||
       !IsNear(1, axisY.ComputeNorm()))
@@ -1116,7 +1203,7 @@ bool EncodeStructureSetMesh(std::string& stl,
     structureSet.GetPolygon(i).Add(extent, axisX, axisY);
   }
 
-  const int depth = structureSet.GetSlicesCount();
+  const int depth = geometry.GetSlicesCount();
 
   vtkNew<vtkImageData> volume;
   volume->SetDimensions(resolution, resolution, depth);
@@ -1135,7 +1222,7 @@ bool EncodeStructureSetMesh(std::string& stl,
     }
 
     size_t j;
-    if (!structureSet.LookupSliceIndex(j, polygon))
+    if (!geometry.LookupSliceIndex(j, polygon))
     {
       throw Orthanc::OrthancException(Orthanc::ErrorCode_InternalError);
     }
@@ -1162,7 +1249,7 @@ bool EncodeStructureSetMesh(std::string& stl,
   volume->SetSpacing(
     extent.GetWidth() / static_cast<double>(resolution),
     extent.GetHeight() / static_cast<double>(resolution),
-    (structureSet.GetMaxProjectionAlongNormal() - structureSet.GetMinProjectionAlongNormal()) / static_cast<double>(depth));
+    (geometry.GetMaxProjectionAlongNormal() - geometry.GetMinProjectionAlongNormal()) / static_cast<double>(depth));
 
   // TODO
   // volume->SetOrigin()
@@ -1321,6 +1408,7 @@ void EncodeStructureSet(OrthancPluginRestOutput* output,
   static const char* const KEY_RESOLUTION = "Resolution";
   static const char* const KEY_ROI_NAMES = "RoiNames";
   static const char* const KEY_SMOOTH = "Smooth";
+  static const char* const KEY_STRICT = "Strict";
 
   if (request->method != OrthancPluginHttpMethod_Post)
   {
@@ -1341,6 +1429,9 @@ void EncodeStructureSet(OrthancPluginRestOutput* output,
   const unsigned int resolution = (body.isMember(KEY_RESOLUTION) ?
                                    Orthanc::SerializationToolbox::ReadUnsignedInteger(body, KEY_RESOLUTION) :
                                    256 /* default value */);
+  const bool strict = (body.isMember(KEY_STRICT) ?
+                       Orthanc::SerializationToolbox::ReadBoolean(body, KEY_STRICT) :
+                       true /* strict by default */);
 
   std::set<std::string> roiNames;
   Orthanc::SerializationToolbox::ReadSetOfStrings(roiNames, body, KEY_ROI_NAMES);
@@ -1349,8 +1440,10 @@ void EncodeStructureSet(OrthancPluginRestOutput* output,
 
   StructureSet structureSet(*dicom);
 
+  StructureSetGeometry geometry(structureSet, strict);
+
   std::string stl;
-  if (!EncodeStructureSetMesh(stl, structureSet, roiNames, resolution, smooth))
+  if (!EncodeStructureSetMesh(stl, structureSet, geometry, roiNames, resolution, smooth))
   {
     throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat, "Cannot encode STL from RT-STRUCT");
   }
@@ -1419,7 +1512,7 @@ void ExtractStl(OrthancPluginRestOutput* output,
 
   std::string stl;
   if (GetStringValue(dataset, DCM_MIMETypeOfEncapsulatedDocument) != Orthanc::MIME_STL ||
-      GetStringValue(dataset, DCM_SOPClassUID) != "1.2.840.10008.5.1.4.1.1.104.3" ||
+      GetStringValue(dataset, DCM_SOPClassUID) != STL_SOP_CLASS_UID ||
       !dicom->GetTagValue(stl, Orthanc::DICOM_TAG_ENCAPSULATED_DOCUMENT))
   {
     throw Orthanc::OrthancException(Orthanc::ErrorCode_BadRequest, "DICOM instance not encapsulating a STL model: " + instanceId);
