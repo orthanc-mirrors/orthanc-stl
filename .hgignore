@@ -7,3 +7,4 @@ ThirdPartyDownloads/
 Three/three.js-*.tar.gz
 Three/dist
 i/
+*.orig

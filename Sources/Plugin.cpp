@@ -22,13 +22,16 @@
  **/
 
 
+#include "VTKToolbox.h"
+#include "Vector3D.h"
+#include "Toolbox.h"
+#include "Extent2D.h"
+
 #include "../Resources/Orthanc/Plugins/OrthancPluginCppWrapper.h"
 
 #include <EmbeddedResources.h>
 
 #include <DicomFormat/DicomInstanceHasher.h>
-#include <Compression/GzipCompressor.h>
-#include <ChunkedBuffer.h>
 #include <DicomParsing/FromDcmtkBridge.h>
 #include <DicomParsing/ParsedDicomFile.h>
 #include <Images/ImageProcessing.h>
@@ -37,19 +40,7 @@
 #include <SerializationToolbox.h>
 #include <SystemToolbox.h>
 
-#include <vtkImageConstantPad.h>
-#include <vtkImageData.h>
-#include <vtkImageResize.h>
-#include <vtkMarchingCubes.h>
-#include <vtkNew.h>
-#include <vtkPolyData.h>
-#include <vtkPolyDataNormals.h>
-#include <vtkSmoothPolyDataFilter.h>
-#include <vtkTriangle.h>
-
 #include <boost/thread/shared_mutex.hpp>
-
-#include <nifti1_io.h>
 
 #define ORTHANC_PLUGIN_NAME  "stl"
 
@@ -162,92 +153,6 @@ void ServeFile(OrthancPluginRestOutput* output,
 #include <dcmtk/dcmdata/dcsequen.h>
 #include <dcmtk/dcmdata/dcuid.h>
 
-class Extent2D : public boost::noncopyable
-{
-private:
-  bool    isEmpty_;
-  double  x1_;
-  double  y1_;
-  double  x2_;
-  double  y2_;
-
-  void CheckNotEmpty() const
-  {
-    if (isEmpty_)
-    {
-      throw Orthanc::OrthancException(Orthanc::ErrorCode_BadSequenceOfCalls);
-    }
-  }
-
-public:
-  Extent2D() :
-    isEmpty_(true),
-    x1_(0),
-    y1_(0),
-    x2_(0),
-    y2_(0)
-  {
-  }
-
-  bool IsEmpty() const
-  {
-    return isEmpty_;
-  }
-
-  double GetMinX() const
-  {
-    CheckNotEmpty();
-    return x1_;
-  }
-
-  double GetMaxX() const
-  {
-    CheckNotEmpty();
-    return x2_;
-  }
-
-  double GetMinY() const
-  {
-    CheckNotEmpty();
-    return y1_;
-  }
-
-  double GetMaxY() const
-  {
-    CheckNotEmpty();
-    return y2_;
-  }
-
-  double GetWidth() const
-  {
-    CheckNotEmpty();
-    return x2_ - x1_;
-  }
-
-  double GetHeight() const
-  {
-    CheckNotEmpty();
-    return y2_ - y1_;
-  }
-
-  void Add(double x,
-           double y)
-  {
-    if (isEmpty_)
-    {
-      x1_ = x2_ = x;
-      y1_ = y2_ = y;
-      isEmpty_ = false;
-    }
-    else
-    {
-      x1_ = std::min(x1_, x);
-      x2_ = std::max(x2_, x);
-      y1_ = std::min(y1_, y);
-      y2_ = std::max(y2_, y);
-    }
-  }
-};
 
 static std::string GetStringValue(DcmItem& item,
                                   const DcmTagKey& key)
@@ -289,128 +194,6 @@ static void ListStructuresNames(std::set<std::string>& target,
       target.insert(GetStringValue(*item, DCM_ROIName));
     }
   }
-}
-
-
-static bool IsNear(double a,
-                   double b)
-{
-  return std::abs(a - b) < 10.0 * std::numeric_limits<double>::epsilon();
-}
-
-
-class Vector3D
-{
-private:
-  double x_;
-  double y_;
-  double z_;
-
-public:
-  Vector3D() :
-    x_(0),
-    y_(0),
-    z_(0)
-  {
-  }
-
-  Vector3D(double x,
-           double y,
-           double z) :
-    x_(x),
-    y_(y),
-    z_(z)
-  {
-  }
-
-  Vector3D(const Vector3D& from,
-           const Vector3D& to) :
-    x_(to.x_ - from.x_),
-    y_(to.y_ - from.y_),
-    z_(to.z_ - from.z_)
-  {
-  }
-
-  double GetX() const
-  {
-    return x_;
-  }
-
-  double GetY() const
-  {
-    return y_;
-  }
-
-  double GetZ() const
-  {
-    return z_;
-  }
-
-  double ComputeSquaredNorm() const
-  {
-    return x_ * x_ + y_ * y_ + z_ * z_;
-  }
-
-  double ComputeNorm() const
-  {
-    return sqrt(ComputeSquaredNorm());
-  }
-
-  void Normalize()
-  {
-    double norm = ComputeNorm();
-    if (!IsNear(norm, 0))
-    {
-      x_ /= norm;
-      y_ /= norm;
-      z_ /= norm;
-    }
-  }
-
-  static Vector3D CrossProduct(const Vector3D& u,
-                               const Vector3D& v)
-  {
-    return Vector3D(u.GetY() * v.GetZ() - u.GetZ() * v.GetY(),
-                    u.GetZ() * v.GetX() - u.GetX() * v.GetZ(),
-                    u.GetX() * v.GetY() - u.GetY() * v.GetX());
-  }
-
-  static double DotProduct(const Vector3D& a,
-                           const Vector3D& b)
-  {
-    return a.GetX() * b.GetX() + a.GetY() * b.GetY() + a.GetZ() * b.GetZ();
-  }
-
-  static bool AreParallel(const Vector3D& a,
-                          const Vector3D& b)
-  {
-    if (IsNear(a.ComputeSquaredNorm(), 1) &&
-        IsNear(b.ComputeSquaredNorm(), 1))
-    {
-      return IsNear(std::abs(Vector3D::DotProduct(a, b)), 1);
-    }
-    else
-    {
-      throw Orthanc::OrthancException(Orthanc::ErrorCode_ParameterOutOfRange,
-                                      "Only applicable to normalized vectors");
-    }
-  }
-};
-
-
-
-static bool MyParseDouble(double& value,
-                          const std::string& s)
-{
-#if 1
-  // This version is much faster, as "ParseDouble()" internally uses
-  // "boost::lexical_cast<double>()"
-  char* end = NULL;
-  value = strtod(s.c_str(), &end);
-  return (end == s.c_str() + s.size());
-#else
-  return Orthanc::SerializationToolbox::ParseDouble(value, s);
-#endif
 }
 
 
@@ -496,9 +279,9 @@ public:
       for (size_t i = 0; i < tokens.size(); i += 3)
       {
         double x, y, z;
-        if (!MyParseDouble(x, tokens[i]) ||
-            !MyParseDouble(y, tokens[i + 1]) ||
-            !MyParseDouble(z, tokens[i + 2]))
+        if (!Toolbox::MyParseDouble(x, tokens[i]) ||
+            !Toolbox::MyParseDouble(y, tokens[i + 1]) ||
+            !Toolbox::MyParseDouble(z, tokens[i + 2]))
         {
           throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat);
         }
@@ -550,7 +333,7 @@ public:
     {
       normal = Vector3D::CrossProduct(Vector3D(points_[1], points_[0]),
                                       Vector3D(points_[2], points_[0]));
-      if (!IsNear(normal.ComputeNorm(), 0))
+      if (!Toolbox::IsNear(normal.ComputeNorm(), 0))
       {
         normal.Normalize();
         hasNormal = true;
@@ -567,7 +350,7 @@ public:
     for (size_t i = 1; i < points_.size(); i++)
     {
       double b = Vector3D::DotProduct(points_[i], normal);
-      if (!IsNear(a, b))
+      if (!Toolbox::IsNear(a, b))
       {
         return false;
       }
@@ -580,8 +363,8 @@ public:
            const Vector3D& axisX,
            const Vector3D& axisY) const
   {
-    assert(IsNear(1, axisX.ComputeNorm()));
-    assert(IsNear(1, axisY.ComputeNorm()));
+    assert(Toolbox::IsNear(1, axisX.ComputeNorm()));
+    assert(Toolbox::IsNear(1, axisY.ComputeNorm()));
 
     for (size_t i = 0; i < points_.size(); i++)
     {
@@ -591,23 +374,6 @@ public:
   }
 };
 
-
-
-struct IsNearPredicate
-{
-  bool operator() (const double& a,
-                   const double& b)
-  {
-    return IsNear(a, b);
-  }
-};
-
-static void RemoveDuplicateValues(std::vector<double>& v)
-{
-  IsNearPredicate predicate;
-  std::vector<double>::iterator last = std::unique(v.begin(), v.end(), predicate);
-  v.erase(last, v.end());
-}
 
 
 class StructureSet : public boost::noncopyable
@@ -789,7 +555,7 @@ private:
 
     double d = (z - minProjectionAlongNormal_) / slicesSpacing_;
 
-    if (IsNear(d, round(d)))
+    if (Toolbox::IsNear(d, round(d)))
     {
       if (d < 0.0 ||
           d > static_cast<double>(slicesCount_) - 1.0)
@@ -857,7 +623,7 @@ public:
     // Only keep unique projections
 
     std::sort(projections.begin(), projections.end());
-    RemoveDuplicateValues(projections);
+    Toolbox::RemoveDuplicateValues(projections);
     assert(!projections.empty());
 
     if (projections.size() == 1)
@@ -884,7 +650,7 @@ public:
       }
 
       std::sort(spacings.begin(), spacings.end());
-      RemoveDuplicateValues(spacings);
+      Toolbox::RemoveDuplicateValues(spacings);
 
       if (spacings.empty())
       {
@@ -921,7 +687,7 @@ public:
       while (it != candidates.end())
       {
         double d = (projections[*it] - projections[reference]) / slicesSpacing_;
-        if (IsNear(d, round(d)))
+        if (Toolbox::IsNear(d, round(d)))
         {
           countSupport ++;
         }
@@ -960,7 +726,7 @@ public:
     for (size_t i = 0; i < projections.size(); i++)
     {
       double d = (projections[i] - bestProjection) / slicesSpacing_;
-      if (IsNear(d, round(d)))
+      if (Toolbox::IsNear(d, round(d)))
       {
         minProjectionAlongNormal_ = std::min(minProjectionAlongNormal_, projections[i]);
         maxProjectionAlongNormal_ = std::max(maxProjectionAlongNormal_, projections[i]);
@@ -968,7 +734,7 @@ public:
     }
 
     double d = (maxProjectionAlongNormal_ - minProjectionAlongNormal_) / slicesSpacing_;
-    if (IsNear(d, round(d)))
+    if (Toolbox::IsNear(d, round(d)))
     {
       slicesCount_ = static_cast<size_t>(round(d)) + 1;
     }
@@ -1077,171 +843,6 @@ public:
 };
 
 
-static void WriteFloat(Orthanc::ChunkedBuffer& buffer,
-                       float value,
-                       Orthanc::Endianness endianness)
-{
-  switch (endianness)
-  {
-    case Orthanc::Endianness_Little:
-      buffer.AddChunk(&value, sizeof(float));
-      break;
-
-    case Orthanc::Endianness_Big:
-    {
-      uint8_t tmp[4];
-      tmp[0] = reinterpret_cast<uint8_t*>(&value) [3];
-      tmp[1] = reinterpret_cast<uint8_t*>(&value) [2];
-      tmp[2] = reinterpret_cast<uint8_t*>(&value) [1];
-      tmp[3] = reinterpret_cast<uint8_t*>(&value) [0];
-      buffer.AddChunk(&tmp, sizeof(float));
-      break;
-    }
-
-    default:
-      throw Orthanc::OrthancException(Orthanc::ErrorCode_NotImplemented);
-  }
-}
-
-
-static void WriteInteger(Orthanc::ChunkedBuffer& buffer,
-                         uint32_t value,
-                         Orthanc::Endianness endianness)
-{
-  switch (endianness)
-  {
-    case Orthanc::Endianness_Little:
-      buffer.AddChunk(&value, sizeof(uint32_t));
-      break;
-
-    case Orthanc::Endianness_Big:
-    {
-      uint8_t tmp[4];
-      tmp[0] = reinterpret_cast<uint8_t*>(&value) [3];
-      tmp[1] = reinterpret_cast<uint8_t*>(&value) [2];
-      tmp[2] = reinterpret_cast<uint8_t*>(&value) [1];
-      tmp[3] = reinterpret_cast<uint8_t*>(&value) [0];
-      buffer.AddChunk(&tmp, sizeof(uint32_t));
-      break;
-    }
-
-    default:
-      throw Orthanc::OrthancException(Orthanc::ErrorCode_NotImplemented);
-  }
-}
-
-
-static void EncodeSTL(std::string& target /* out */,
-                      vtkPolyData& mesh /* in */)
-{
-  const Orthanc::Endianness endianness = Orthanc::Toolbox::DetectEndianness();
-
-  Orthanc::ChunkedBuffer buffer;
-
-  uint8_t header[80];
-  memset(header, 0, sizeof(header));
-  buffer.AddChunk(header, sizeof(header));  // This doesn't depend on endianness
-
-  WriteInteger(buffer, mesh.GetNumberOfCells(), endianness);
-
-  for (vtkIdType i = 0; i < mesh.GetNumberOfCells(); i++)
-  {
-    vtkCell* cell = mesh.GetCell(i);
-    vtkTriangle* triangle = dynamic_cast<vtkTriangle*>(cell);
-
-    double p0[3];
-    double p1[3];
-    double p2[3];
-    triangle->GetPoints()->GetPoint(0, p0);
-    triangle->GetPoints()->GetPoint(1, p1);
-    triangle->GetPoints()->GetPoint(2, p2);
-
-    double normal[3];
-    vtkTriangle::ComputeNormal(p0, p1, p2, normal);
-
-    WriteFloat(buffer, normal[0], endianness);
-    WriteFloat(buffer, normal[1], endianness);
-    WriteFloat(buffer, normal[2], endianness);
-    WriteFloat(buffer, p0[0], endianness);
-    WriteFloat(buffer, p0[1], endianness);
-    WriteFloat(buffer, p0[2], endianness);
-    WriteFloat(buffer, p1[0], endianness);
-    WriteFloat(buffer, p1[1], endianness);
-    WriteFloat(buffer, p1[2], endianness);
-    WriteFloat(buffer, p2[0], endianness);
-    WriteFloat(buffer, p2[1], endianness);
-    WriteFloat(buffer, p2[2], endianness);
-
-    uint16_t a = 0;
-    buffer.AddChunk(&a, sizeof(a));  // This doesn't depend on endianness
-  }
-
-  buffer.Flatten(target);
-}
-
-
-bool EncodeVolume(std::string& stl,
-                  vtkImageData* volume,
-                  unsigned int resolution,
-                  bool smooth)
-{
-  if (volume == NULL)
-  {
-    throw Orthanc::OrthancException(Orthanc::ErrorCode_NullPointer);
-  }
-
-  vtkNew<vtkImageResize> resize;
-  resize->SetOutputDimensions(resolution, resolution, resolution);
-  resize->SetInputData(volume);
-  resize->Update();
-
-  vtkNew<vtkImageConstantPad> padding;
-  padding->SetConstant(0);
-  padding->SetOutputNumberOfScalarComponents(1);
-  padding->SetOutputWholeExtent(-1, resolution, -1, resolution, -1, resolution);
-  padding->SetInputData(resize->GetOutput());
-  padding->Update();
-
-  double range[2];
-  padding->GetOutput()->GetScalarRange(range);
-
-  const double isoValue = (range[0] + range[1]) / 2.0;
-
-  vtkNew<vtkMarchingCubes> surface;
-  surface->SetInputData(padding->GetOutput());
-  surface->ComputeNormalsOn();
-  surface->SetValue(0, isoValue);
-  surface->Update();
-
-  if (smooth)
-  {
-    vtkNew<vtkSmoothPolyDataFilter> smoothFilter;
-    // Apply volume smoothing
-    // https://examples.vtk.org/site/Cxx/PolyData/SmoothPolyDataFilter/
-    smoothFilter->SetInputConnection(surface->GetOutputPort());
-    smoothFilter->SetNumberOfIterations(15);
-    smoothFilter->SetRelaxationFactor(0.1);
-    smoothFilter->FeatureEdgeSmoothingOff();
-    smoothFilter->BoundarySmoothingOn();
-    smoothFilter->Update();
-
-    vtkNew<vtkPolyDataNormals> normalGenerator;
-    normalGenerator->SetInputConnection(smoothFilter->GetOutputPort());
-    normalGenerator->ComputePointNormalsOn();
-    normalGenerator->ComputeCellNormalsOn();
-    normalGenerator->Update();
-
-    EncodeSTL(stl, *normalGenerator->GetOutput());
-  }
-  else
-  {
-    EncodeSTL(stl, *surface->GetOutput());
-  }
-
-  return true;
-}
-
-
 static Orthanc::ParsedDicomFile* LoadInstance(const std::string& instanceId)
 {
   std::string dicom;
@@ -1301,12 +902,12 @@ static void GetReferencedVolumeAxes(Vector3D& axisX,
             double x1, x2, x3, y1, y2, y3;
 
             if (items.size() == 6 &&
-                MyParseDouble(x1, items[0]) &&
-                MyParseDouble(x2, items[1]) &&
-                MyParseDouble(x3, items[2]) &&
-                MyParseDouble(y1, items[3]) &&
-                MyParseDouble(y2, items[4]) &&
-                MyParseDouble(y3, items[5]))
+                Toolbox::MyParseDouble(x1, items[0]) &&
+                Toolbox::MyParseDouble(x2, items[1]) &&
+                Toolbox::MyParseDouble(x3, items[2]) &&
+                Toolbox::MyParseDouble(y1, items[3]) &&
+                Toolbox::MyParseDouble(y2, items[4]) &&
+                Toolbox::MyParseDouble(y3, items[5]))
             {
               axisX = Vector3D(x1, x2, x3);
               axisY = Vector3D(y1, y2, y3);
@@ -1337,7 +938,7 @@ static bool EncodeStructureSetMesh(std::string& stl,
     throw Orthanc::OrthancException(Orthanc::ErrorCode_ParameterOutOfRange);
   }
 
-  if (!IsNear(1, geometry.GetSlicesNormal().ComputeNorm()))
+  if (!Toolbox::IsNear(1, geometry.GetSlicesNormal().ComputeNorm()))
   {
     throw Orthanc::OrthancException(Orthanc::ErrorCode_InternalError);
   }
@@ -1347,8 +948,8 @@ static bool EncodeStructureSetMesh(std::string& stl,
 
   Vector3D axisZ = Vector3D::CrossProduct(axisX, axisY);
 
-  if (!IsNear(1, axisX.ComputeNorm()) ||
-      !IsNear(1, axisY.ComputeNorm()) ||
+  if (!Toolbox::IsNear(1, axisX.ComputeNorm()) ||
+      !Toolbox::IsNear(1, axisY.ComputeNorm()) ||
       !Vector3D::AreParallel(axisZ, geometry.GetSlicesNormal()))
   {
     throw Orthanc::OrthancException(Orthanc::ErrorCode_InternalError);
@@ -1417,7 +1018,7 @@ static bool EncodeStructureSetMesh(std::string& stl,
 
   volume->SetSpacing(pixelSpacingX, pixelSpacingY, pixelSpacingZ);
 
-  return EncodeVolume(stl, volume.Get(), resolution, smooth);
+  return VTKToolbox::EncodeVolume(stl, volume.Get(), resolution, smooth);
 }
 
 
@@ -1674,114 +1275,6 @@ void ExtractStl(OrthancPluginRestOutput* output,
 
 
 
-class NiftiHeader : public boost::noncopyable
-{
-private:
-  nifti_image* image_;
-
-public:
-  NiftiHeader(const std::string& nifti)
-  {
-    nifti_1_header header;
-    if (nifti.size() < sizeof(header))
-    {
-      throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat);
-    }
-
-    memcpy(&header, nifti.c_str(), sizeof(header));
-    if (!nifti_hdr_looks_good(&header))
-    {
-      throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat);
-    }
-
-    image_ = nifti_convert_nhdr2nim(header, "dummy_filename");
-    if (image_ == NULL)
-    {
-      throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat);
-    }
-  }
-
-  ~NiftiHeader()
-  {
-    nifti_image_free(image_);
-  }
-
-  const nifti_image& GetInfo() const
-  {
-    assert(image_ != NULL);
-    return *image_;
-  }
-};
-
-
-static void LoadNifti(vtkImageData* volume,
-                      std::string& nifti)
-{
-  if (volume == NULL)
-  {
-    throw Orthanc::OrthancException(Orthanc::ErrorCode_NullPointer);
-  }
-
-  const uint8_t* p = reinterpret_cast<const uint8_t*>(nifti.c_str());
-
-  if (nifti.size() >= 2 &&
-      p[0] == 0x1f &&
-      p[1] == 0x8b)
-  {
-    Orthanc::GzipCompressor compressor;
-    std::string uncompressed;
-    Orthanc::IBufferCompressor::Uncompress(uncompressed, compressor, nifti);
-    nifti.swap(uncompressed);
-  }
-
-  NiftiHeader header(nifti);
-
-  if (header.GetInfo().ndim != 3)
-  {
-    throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat,
-                                    "Only 3D NIfTI volumes are allowed");
-  }
-
-  size_t itemSize;
-  int vtkType;
-
-  switch (header.GetInfo().datatype)
-  {
-    case DT_UNSIGNED_CHAR:
-      itemSize = 1;
-      vtkType = VTK_UNSIGNED_CHAR;
-      break;
-
-    case DT_FLOAT:
-      itemSize = sizeof(float);
-      vtkType = VTK_FLOAT;
-      break;
-
-    case DT_DOUBLE:
-      itemSize = sizeof(double);
-      vtkType = VTK_DOUBLE;
-      break;
-
-    default:
-      throw Orthanc::OrthancException(Orthanc::ErrorCode_NotImplemented);
-  }
-
-  assert(static_cast<int>(header.GetInfo().nvox) == header.GetInfo().nx * header.GetInfo().ny * header.GetInfo().nz);
-
-  const size_t pixelDataOffset = sizeof(nifti_1_header) + 4 /* extension */;
-
-  if (nifti.size() != pixelDataOffset + header.GetInfo().nvox * itemSize)
-  {
-    throw Orthanc::OrthancException(Orthanc::ErrorCode_CorruptedFile);
-  }
-
-  volume->SetDimensions(header.GetInfo().nx, header.GetInfo().ny, header.GetInfo().nz);
-  volume->AllocateScalars(vtkType, 1);
-  volume->SetSpacing(header.GetInfo().dx, header.GetInfo().dy, header.GetInfo().dz);
-  memcpy(volume->GetScalarPointer(), &nifti[pixelDataOffset], header.GetInfo().nvox * itemSize);
-}
-
-
 void EncodeNifti(OrthancPluginRestOutput* output,
                  const char* url,
                  const OrthancPluginHttpRequest* request)
@@ -1818,10 +1311,10 @@ void EncodeNifti(OrthancPluginRestOutput* output,
                                    256 /* default value */);
 
   vtkNew<vtkImageData> volume;
-  LoadNifti(volume.Get(), nifti);
+  VTKToolbox::LoadNifti(volume.Get(), nifti);
 
   std::string stl;
-  if (!EncodeVolume(stl, volume.Get(), resolution, smooth))
+  if (!VTKToolbox::EncodeVolume(stl, volume.Get(), resolution, smooth))
   {
     throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat, "Cannot encode STL from NIfTI");
   }
