@@ -22,6 +22,7 @@
  **/
 
 
+#include "STLToolbox.h"
 #include "StructurePolygon.h"
 #include "VTKToolbox.h"
 #include "Vector3D.h"

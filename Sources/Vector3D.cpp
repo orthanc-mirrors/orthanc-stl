@@ -24,7 +24,7 @@
 
 #include "Vector3D.h"
 
-#include "Toolbox.h"
+#include "STLToolbox.h"
 
 #include <OrthancException.h>
 
