@@ -1887,6 +1887,10 @@ extern "C"
       OrthancPlugins::RegisterRestCallback<EncodeNifti>("/stl/encode-nifti", true);
     }
 
+    OrthancPlugins::OrthancConfiguration globalConfiguration;
+    OrthancPlugins::OrthancConfiguration configuration;
+    globalConfiguration.GetSection(configuration, "STL");
+
     // Extend the default Orthanc Explorer with custom JavaScript for STL
     std::string explorer;
 
@@ -1895,6 +1899,7 @@ extern "C"
 
       std::map<std::string, std::string> dictionary;
       dictionary["HAS_CREATE_DICOM_STL"] = (hasCreateDicomStl_ ? "true" : "false");
+      dictionary["SHOW_NIFTI_BUTTON"] = (configuration.GetBooleanValue("NIfTI", false) ? "true" : "false");
       explorer = Orthanc::Toolbox::SubstituteVariables(explorer, dictionary);
 
       OrthancPlugins::ExtendOrthancExplorer(ORTHANC_PLUGIN_NAME, explorer);

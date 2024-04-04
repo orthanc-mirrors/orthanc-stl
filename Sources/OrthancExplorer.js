@@ -147,6 +147,215 @@ function AddGenerateFromRtStructButton(instanceId, id, parent) {
 }
 
 
+function AddGenerateFromNIfTIButton(studyId) {
+  if (${HAS_CREATE_DICOM_STL} &&
+      ${SHOW_NIFTI_BUTTON}) {
+    $('#stl-attach-nifti').remove();
+
+    var nifti = $('<a>')
+        .attr('id', 'stl-attach-nifti')
+        .attr('data-role', 'button')
+        .attr('href', '#')
+        .attr('data-icon', 'search')
+        .attr('data-theme', 'e')
+        .text('Attach NIfTI 3D model')
+        .button();
+
+    nifti.insertAfter($('#study-info'));
+    nifti.click(function() {
+
+      var options = $('<ul>')
+          .attr('data-divider-theme', 'd')
+          .attr('data-role', 'listview');
+
+      var upload = $('<input>')
+          .attr('type', 'file')
+          .attr('id', 'stl-attach-nifti-upload')
+          .attr('data-theme', 'a');
+
+      options.append($('<li>').text('Choose the NIfTI file:'));
+      options.append($('<li>').append(upload));
+      options.append($('<li>').text('Resolution:'));
+      options.append($('<li>').append($('<select>')
+                                      .attr('id', 'stl-attach-nifti-resolution')
+                                      .attr('data-theme', 'a')
+                                      .append($('<option>').attr('value', '256').text('256'))
+                                      .append($('<option>').attr('value', '128').text('128'))
+                                      .append($('<option>').attr('value', '512').text('512'))));
+      options.append($('<li>')
+                     .append($('<input>')
+                             .attr('id', 'stl-attach-nifti-smooth')
+                             .attr('type', 'checkbox')
+                             .attr('data-theme', 'a')
+                             .attr('checked', ''))
+                     .append($('<label>')
+                             .attr('for', 'stl-attach-nifti-smooth')
+                             .text('Smooth volume')));
+
+      options.append($('<li>').append(
+        $('<a>')
+          .attr('href', '#')
+          .attr('rel', 'close').attr('data-theme', 'b')
+          .text('Generate')
+          .click(function(e) {
+            e.preventDefault();
+
+            var fileInput = document.getElementById('stl-attach-nifti-upload');
+            var resolution = $('#stl-attach-nifti-resolution').val();
+            var smooth = $('#stl-attach-nifti-smooth').is(':checked');
+
+            if (fileInput.files.length == 0) {
+              alert('No NIfTI file was selected');
+              return;
+            }
+
+            reader = new FileReader();
+            reader.onload = function() {
+
+              // https://github.com/axios/axios/issues/513
+              var nifti = reader.result;
+              var niftiBase64 = btoa(new Uint8Array(nifti).reduce((data, byte) => data + String.fromCharCode(byte), ''));
+
+              $.ajax({
+                url: '../stl/encode-nifti',
+                type: 'POST',
+                data: JSON.stringify({
+                  'Nifti' : 'data:application/octet-stream;base64,' + niftiBase64,
+                  'ParentStudy' : studyId,
+                  'Smooth' : smooth,
+                  'Resolution' : parseInt(resolution, 10)
+                }),
+                dataType: 'json',
+                success: function(s) {
+                  $.mobile.changePage('#series?uuid=' + s.ParentSeries, {
+                    allowSamePageTransition: true
+                  });
+                },
+                error: function() {
+                  alert('Error while generating the 3D model');
+                }
+              });
+
+            };
+
+            reader.readAsArrayBuffer(fileInput.files[0]);
+          })));
+
+      // Launch the dialog
+      $('#dialog').simpledialog2({
+        mode: 'blank',
+        animate: false,
+        headerText: 'Generate 3D model',
+        headerClose: true,
+        forceInput: false,
+        width: '100%',
+        blankContent: options
+      });
+    });
+  }
+}
+
+
+function AddImportSTLButton(studyId) {
+  if (${HAS_CREATE_DICOM_STL}) {
+    $('#stl-attach-instance').remove();
+
+    var instance = $('<a>')
+        .attr('id', 'stl-attach-instance')
+        .attr('data-role', 'button')
+        .attr('href', '#')
+        .attr('data-icon', 'search')
+        .attr('data-theme', 'e')
+        .text('Attach STL model')
+        .button();
+
+    instance.insertAfter($('#study-info'));
+    instance.click(function() {
+
+      var options = $('<ul>')
+          .attr('data-divider-theme', 'd')
+          .attr('data-role', 'listview');
+
+      var upload = $('<input>')
+          .attr('type', 'file')
+          .attr('id', 'stl-attach-instance-upload')
+          .attr('data-theme', 'a');
+
+      options.append($('<li>').text('Choose the STL file:'));
+      options.append($('<li>').append(upload));
+
+      options.append($('<li>').text('Series description:'));
+      options.append($('<li>').append($('<input>')
+                                      .attr('type', 'text')
+                                      .attr('id', 'stl-attach-instance-description')
+                                      .attr('data-theme', 'b')
+                                      .val('Imported STL')));
+
+      options.append($('<li>').append(
+        $('<a>')
+          .attr('href', '#')
+          .attr('rel', 'close').attr('data-theme', 'b')
+          .text('Import')
+          .click(function(e) {
+            e.preventDefault();
+
+            var fileInput = document.getElementById('stl-attach-instance-upload');
+            var description = $('#stl-attach-instance-description').val();
+
+            if (fileInput.files.length == 0) {
+              alert('No Instance file was selected');
+              return;
+            }
+
+            reader = new FileReader();
+            reader.onload = function() {
+
+              // https://github.com/axios/axios/issues/513
+              var stl = reader.result;
+              var stlBase64 = btoa(new Uint8Array(stl).reduce((data, byte) => data + String.fromCharCode(byte), ''));
+
+              $.ajax({
+                url: '../tools/create-dicom',
+                type: 'POST',
+                data: JSON.stringify({
+                  'Content' : 'data:model/stl;base64,' + stlBase64,
+                  'Parent' : studyId,
+                  'Tags' : {
+                    'SeriesDescription' : description
+                  }
+                }),
+                dataType: 'json',
+                success: function(s) {
+                  $.mobile.changePage('#series?uuid=' + s.ParentSeries, {
+                    allowSamePageTransition: true
+                  });
+                },
+                error: function() {
+                  alert('Error while generating the 3D model');
+                }
+              });
+
+            };
+
+            reader.readAsArrayBuffer(fileInput.files[0]);
+          })));
+
+      // Launch the dialog
+      $('#dialog').simpledialog2({
+        mode: 'blank',
+        animate: false,
+        headerText: 'Attach STL',
+        headerClose: true,
+        forceInput: false,
+        width: '100%',
+        blankContent: options
+      });
+    });
+  }
+}
+
+
+
 $('#series').live('pagebeforeshow', function() {
   var seriesId = $.mobile.pageData.uuid;
 
@@ -200,111 +409,7 @@ $('#instance').live('pagebeforeshow', function() {
 
 
 $('#study').live('pagebeforeshow', function() {
-  if (${HAS_CREATE_DICOM_STL}) {
-    var studyId = $.mobile.pageData.uuid;
-
-    $('#stl-attach-nifti-study').remove();
-
-    var b = $('<a>')
-        .attr('id', 'stl-attach-nifti-study')
-        .attr('data-role', 'button')
-        .attr('href', '#')
-        .attr('data-icon', 'search')
-        .attr('data-theme', 'e')
-        .text('Attach NIfTI 3D model')
-        .button();
-
-    b.insertAfter($('#study-info'));
-    b.click(function() {
-
-      var options = $('<ul>')
-          .attr('data-divider-theme', 'd')
-          .attr('data-role', 'listview');
-
-      var upload = $('<input>')
-          .attr('type', 'file')
-          .attr('id', 'stl-attach-nifti-study-upload')
-          .attr('data-theme', 'a');
-
-      options.append($('<li>').text('Choose the NIfTI file:'));
-      options.append($('<li>').append(upload));
-      options.append($('<li>').text('Resolution:'));
-      options.append($('<li>').append($('<select>')
-                                      .attr('id', 'stl-attach-nifti-study-resolution')
-                                      .attr('data-theme', 'a')
-                                      .append($('<option>').attr('value', '256').text('256'))
-                                      .append($('<option>').attr('value', '128').text('128'))
-                                      .append($('<option>').attr('value', '512').text('512'))));
-      options.append($('<li>')
-                     .append($('<input>')
-                             .attr('id', 'stl-attach-nifti-study-smooth')
-                             .attr('type', 'checkbox')
-                             .attr('data-theme', 'a')
-                             .attr('checked', ''))
-                     .append($('<label>')
-                             .attr('for', 'stl-attach-nifti-study-smooth')
-                             .text('Smooth volume')));
-
-      options.append($('<li>').append(
-        $('<a>')
-          .attr('href', '#')
-          .attr('rel', 'close').attr('data-theme', 'b')
-          .text('Generate')
-          .click(function(e) {
-            e.preventDefault();
-
-            var fileInput = document.getElementById('stl-attach-nifti-study-upload');
-            var resolution = $('#stl-attach-nifti-study-resolution').val();
-            var smooth = $('#stl-attach-nifti-study-smooth').is(':checked');
-
-            if (fileInput.files.length == 0) {
-              alert('No NIfTI file was selected');
-              return;
-            }
-
-            reader = new FileReader();
-            reader.onload = function() {
-
-              // https://github.com/axios/axios/issues/513
-              var nifti = reader.result;
-              var niftiBase64 = btoa(new Uint8Array(nifti).reduce((data, byte) => data + String.fromCharCode(byte), ''));
-
-              $.ajax({
-                url: '../stl/encode-nifti',
-                type: 'POST',
-                data: JSON.stringify({
-                  'Nifti' : 'data:application/octet-stream;base64,' + niftiBase64,
-                  'ParentStudy' : studyId,
-                  'Smooth' : smooth,
-                  'Resolution' : parseInt(resolution, 10)
-                }),
-                dataType: 'json',
-                success: function(s) {
-                  $.mobile.changePage('#series?uuid=' + s.ParentSeries, {
-                    allowSamePageTransition: true
-                  });
-                },
-                error: function() {
-                  alert('Error while generating the 3D model');
-                }
-              });
-
-            };
-
-            reader.readAsArrayBuffer(fileInput.files[0]);
-          })));
-
-      // Launch the dialog
-      $('#dialog').simpledialog2({
-        mode: 'blank',
-        animate: false,
-        headerText: 'Generate 3D model',
-        headerClose: true,
-        forceInput: false,
-        width: '100%',
-        blankContent: options
-      });
-
-    });
-  }
+  var studyId = $.mobile.pageData.uuid;
+  AddImportSTLButton(studyId);
+  AddGenerateFromNIfTIButton(studyId);
 });
