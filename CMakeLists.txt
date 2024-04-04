@@ -207,6 +207,8 @@ add_library(OrthancSTL SHARED
   Sources/Plugin.cpp
   Sources/STLToolbox.cpp
   Sources/StructurePolygon.cpp
+  Sources/StructureSet.cpp
+  Sources/StructureSetGeometry.cpp
   Sources/VTKToolbox.cpp
   Sources/Vector3D.cpp
 
