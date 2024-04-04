@@ -1301,12 +1301,12 @@ static void GetReferencedVolumeAxes(Vector3D& axisX,
             double x1, x2, x3, y1, y2, y3;
 
             if (items.size() == 6 &&
-                MyParseDouble(y1, items[0]) &&
-                MyParseDouble(y2, items[1]) &&
-                MyParseDouble(y3, items[2]) &&
-                MyParseDouble(x1, items[3]) &&
-                MyParseDouble(x2, items[4]) &&
-                MyParseDouble(x3, items[5]))
+                MyParseDouble(x1, items[0]) &&
+                MyParseDouble(x2, items[1]) &&
+                MyParseDouble(x3, items[2]) &&
+                MyParseDouble(y1, items[3]) &&
+                MyParseDouble(y2, items[4]) &&
+                MyParseDouble(y3, items[5]))
             {
               axisX = Vector3D(x1, x2, x3);
               axisY = Vector3D(y1, y2, y3);
@@ -1369,6 +1369,12 @@ static bool EncodeStructureSetMesh(std::string& stl,
   assert(sizeof(unsigned char) == 1);
   memset(volume->GetScalarPointer(), 0, resolution * resolution * depth);
 
+  const double pixelSpacingX = extent.GetWidth() / static_cast<double>(resolution);
+  const double pixelSpacingY = extent.GetHeight() / static_cast<double>(resolution);
+  const double pixelSpacingZ = geometry.GetSlicesSpacing();
+
+  bool first = true;
+
   for (size_t i = 0; i < structureSet.GetPolygonsCount(); i++)
   {
     const StructurePolygon& polygon = structureSet.GetPolygon(i);
@@ -1389,6 +1395,14 @@ static bool EncodeStructureSetMesh(std::string& stl,
           double y = (Vector3D::DotProduct(point, axisY) - extent.GetMinY()) / extent.GetHeight() * static_cast<double>(resolution);
           points.push_back(Orthanc::ImageProcessing::ImagePoint(static_cast<int32_t>(std::floor(x)),
                                                                 static_cast<int32_t>(std::floor(y))));
+
+          if (first)
+          {
+            first = false;
+            volume->SetOrigin(point.GetX() - x * pixelSpacingX,
+                              point.GetY() - y * pixelSpacingY,
+                              point.GetZ() - z * pixelSpacingZ);
+          }
         }
 
         Orthanc::ImageAccessor slice;
@@ -1401,12 +1415,7 @@ static bool EncodeStructureSetMesh(std::string& stl,
     }
   }
 
-  volume->SetSpacing(extent.GetWidth() / static_cast<double>(resolution),
-                     extent.GetHeight() / static_cast<double>(resolution),
-                     geometry.GetSlicesSpacing());
-
-  // TODO
-  // volume->SetOrigin()
+  volume->SetSpacing(pixelSpacingX, pixelSpacingY, pixelSpacingZ);
 
   return EncodeVolume(stl, volume.Get(), resolution, smooth);
 }
