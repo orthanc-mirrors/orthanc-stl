@@ -53,8 +53,6 @@
 
 #define ORTHANC_PLUGIN_NAME  "stl"
 
-static const char* const STL_SOP_CLASS_UID = "1.2.840.10008.5.1.4.1.1.104.3";
-
 
 // Forward declaration
 void ReadStaticAsset(std::string& target,
@@ -162,6 +160,7 @@ void ServeFile(OrthancPluginRestOutput* output,
 #include <dcmtk/dcmdata/dcfilefo.h>
 #include <dcmtk/dcmdata/dcitem.h>
 #include <dcmtk/dcmdata/dcsequen.h>
+#include <dcmtk/dcmdata/dcuid.h>
 
 class Extent2D : public boost::noncopyable
 {
@@ -347,9 +346,14 @@ public:
     return z_;
   }
 
+  double ComputeSquaredNorm() const
+  {
+    return x_ * x_ + y_ * y_ + z_ * z_;
+  }
+
   double ComputeNorm() const
   {
-    return sqrt(x_ * x_ + y_ * y_ + z_ * z_);
+    return sqrt(ComputeSquaredNorm());
   }
 
   void Normalize()
@@ -375,6 +379,21 @@ public:
                            const Vector3D& b)
   {
     return a.GetX() * b.GetX() + a.GetY() * b.GetY() + a.GetZ() * b.GetZ();
+  }
+
+  static bool AreParallel(const Vector3D& a,
+                          const Vector3D& b)
+  {
+    if (IsNear(a.ComputeSquaredNorm(), 1) &&
+        IsNear(b.ComputeSquaredNorm(), 1))
+    {
+      return IsNear(std::abs(Vector3D::DotProduct(a, b)), 1);
+    }
+    else
+    {
+      throw Orthanc::OrthancException(Orthanc::ErrorCode_ParameterOutOfRange,
+                                      "Only applicable to normalized vectors");
+    }
   }
 };
 
@@ -678,7 +697,7 @@ public:
     }
   }
 
-  const std::string& GetPatient() const
+  const std::string& GetPatientId() const
   {
     return patientId_;
   }
@@ -751,12 +770,6 @@ private:
   double    maxProjectionAlongNormal_;
   size_t    slicesCount_;
 
-  static bool AreNormalsParallel(const Vector3D& a,
-                                 const Vector3D& b)
-  {
-    return IsNear(std::abs(Vector3D::DotProduct(a, b)), 1);
-  }
-
   bool LookupProjectionIndex(size_t& index,
                              double z) const
   {
@@ -817,7 +830,7 @@ public:
           slicesNormal_ = normal;
         }
 
-        if (AreNormalsParallel(normal, slicesNormal_))
+        if (Vector3D::AreParallel(normal, slicesNormal_))
         {
           // This is a valid slice (it is parallel to the normal)
           const Vector3D& point = structures.GetPolygon(i).GetPoint(0);
@@ -1002,7 +1015,7 @@ public:
   {
     Vector3D normal;
     if (polygon.IsCoplanar(normal) &&
-        AreNormalsParallel(normal, slicesNormal_))
+        Vector3D::AreParallel(normal, slicesNormal_))
     {
       z = Vector3D::DotProduct(polygon.GetPoint(0), slicesNormal_);
       return true;
@@ -1064,19 +1077,72 @@ public:
 };
 
 
+static void WriteFloat(Orthanc::ChunkedBuffer& buffer,
+                       float value,
+                       Orthanc::Endianness endianness)
+{
+  switch (endianness)
+  {
+    case Orthanc::Endianness_Little:
+      buffer.AddChunk(&value, sizeof(float));
+      break;
+
+    case Orthanc::Endianness_Big:
+    {
+      uint8_t tmp[4];
+      tmp[0] = reinterpret_cast<uint8_t*>(&value) [3];
+      tmp[1] = reinterpret_cast<uint8_t*>(&value) [2];
+      tmp[2] = reinterpret_cast<uint8_t*>(&value) [1];
+      tmp[3] = reinterpret_cast<uint8_t*>(&value) [0];
+      buffer.AddChunk(&tmp, sizeof(float));
+      break;
+    }
+
+    default:
+      throw Orthanc::OrthancException(Orthanc::ErrorCode_NotImplemented);
+  }
+}
+
+
+static void WriteInteger(Orthanc::ChunkedBuffer& buffer,
+                         uint32_t value,
+                         Orthanc::Endianness endianness)
+{
+  switch (endianness)
+  {
+    case Orthanc::Endianness_Little:
+      buffer.AddChunk(&value, sizeof(uint32_t));
+      break;
+
+    case Orthanc::Endianness_Big:
+    {
+      uint8_t tmp[4];
+      tmp[0] = reinterpret_cast<uint8_t*>(&value) [3];
+      tmp[1] = reinterpret_cast<uint8_t*>(&value) [2];
+      tmp[2] = reinterpret_cast<uint8_t*>(&value) [1];
+      tmp[3] = reinterpret_cast<uint8_t*>(&value) [0];
+      buffer.AddChunk(&tmp, sizeof(uint32_t));
+      break;
+    }
+
+    default:
+      throw Orthanc::OrthancException(Orthanc::ErrorCode_NotImplemented);
+  }
+}
+
+
 static void EncodeSTL(std::string& target /* out */,
                       vtkPolyData& mesh /* in */)
 {
-  // TODO - Conversion to little endian on big endian
+  const Orthanc::Endianness endianness = Orthanc::Toolbox::DetectEndianness();
 
   Orthanc::ChunkedBuffer buffer;
 
   uint8_t header[80];
   memset(header, 0, sizeof(header));
-  buffer.AddChunk(header, sizeof(header));
+  buffer.AddChunk(header, sizeof(header));  // This doesn't depend on endianness
 
-  uint32_t n = mesh.GetNumberOfCells();
-  buffer.AddChunk(&n, sizeof(n));
+  WriteInteger(buffer, mesh.GetNumberOfCells(), endianness);
 
   for (vtkIdType i = 0; i < mesh.GetNumberOfCells(); i++)
   {
@@ -1093,15 +1159,21 @@ static void EncodeSTL(std::string& target /* out */,
     double normal[3];
     vtkTriangle::ComputeNormal(p0, p1, p2, normal);
 
-    float d[4 * 3] = {
-      static_cast<float>(normal[0]), static_cast<float>(normal[1]), static_cast<float>(normal[2]),
-      static_cast<float>(p0[0]), static_cast<float>(p0[1]), static_cast<float>(p0[2]),
-      static_cast<float>(p1[0]), static_cast<float>(p1[1]), static_cast<float>(p1[2]),
-      static_cast<float>(p2[0]), static_cast<float>(p2[1]), static_cast<float>(p2[2]) };
-    buffer.AddChunk(d, sizeof(d));
+    WriteFloat(buffer, normal[0], endianness);
+    WriteFloat(buffer, normal[1], endianness);
+    WriteFloat(buffer, normal[2], endianness);
+    WriteFloat(buffer, p0[0], endianness);
+    WriteFloat(buffer, p0[1], endianness);
+    WriteFloat(buffer, p0[2], endianness);
+    WriteFloat(buffer, p1[0], endianness);
+    WriteFloat(buffer, p1[1], endianness);
+    WriteFloat(buffer, p1[2], endianness);
+    WriteFloat(buffer, p2[0], endianness);
+    WriteFloat(buffer, p2[1], endianness);
+    WriteFloat(buffer, p2[2], endianness);
 
     uint16_t a = 0;
-    buffer.AddChunk(&a, sizeof(a));
+    buffer.AddChunk(&a, sizeof(a));  // This doesn't depend on endianness
   }
 
   buffer.Flatten(target);
@@ -1170,14 +1242,97 @@ bool EncodeVolume(std::string& stl,
 }
 
 
-bool EncodeStructureSetMesh(std::string& stl,
-                            const StructureSet& structureSet,
-                            const StructureSetGeometry& geometry,
-                            const std::set<std::string>& roiNames,
-                            unsigned int resolution,
-                            bool smooth)
+static Orthanc::ParsedDicomFile* LoadInstance(const std::string& instanceId)
 {
-  if (resolution < 1)
+  std::string dicom;
+
+  if (!OrthancPlugins::RestApiGetString(dicom, "/instances/" + instanceId + "/file", false))
+  {
+    throw Orthanc::OrthancException(Orthanc::ErrorCode_UnknownResource);
+  }
+  else
+  {
+    return new Orthanc::ParsedDicomFile(dicom);
+  }
+}
+
+
+static void GetReferencedVolumeAxes(Vector3D& axisX,
+                                    Vector3D& axisY,
+                                    const StructureSet& structureSet)
+{
+  // This is a rough guess for the X/Y axes
+  axisX = Vector3D(1, 0, 0);
+  axisY = Vector3D(0, 1, 0);
+
+  // Look for one instance from the referenced volume
+  const std::string& sopInstanceUid = structureSet.GetPolygon(0).GetReferencedSopInstanceUid();
+
+  Json::Value response;
+  if (OrthancPlugins::RestApiPost(response, "/tools/lookup", sopInstanceUid, false))
+  {
+    if (response.type() != Json::arrayValue)
+    {
+      throw Orthanc::OrthancException(Orthanc::ErrorCode_NetworkProtocol);
+    }
+
+    bool first = true;
+
+    for (Json::Value::ArrayIndex i = 0; i < response.size(); i++)
+    {
+      if (response[i].type() != Json::objectValue)
+      {
+        throw Orthanc::OrthancException(Orthanc::ErrorCode_NetworkProtocol);
+      }
+
+      if (Orthanc::SerializationToolbox::ReadString(response[i], "Type") == "Instance")
+      {
+        if (first)
+        {
+          const std::string& instanceId = Orthanc::SerializationToolbox::ReadString(response[i], "ID");
+          std::unique_ptr<Orthanc::ParsedDicomFile> reference(LoadInstance(instanceId));
+
+          std::string imageOrientation;
+          if (reference->GetTagValue(imageOrientation, Orthanc::DICOM_TAG_IMAGE_ORIENTATION_PATIENT))
+          {
+            std::vector<std::string> items;
+            Orthanc::Toolbox::TokenizeString(items, imageOrientation, '\\');
+
+            double x1, x2, x3, y1, y2, y3;
+
+            if (items.size() == 6 &&
+                MyParseDouble(y1, items[0]) &&
+                MyParseDouble(y2, items[1]) &&
+                MyParseDouble(y3, items[2]) &&
+                MyParseDouble(x1, items[3]) &&
+                MyParseDouble(x2, items[4]) &&
+                MyParseDouble(x3, items[5]))
+            {
+              axisX = Vector3D(x1, x2, x3);
+              axisY = Vector3D(y1, y2, y3);
+            }
+          }
+        }
+        else
+        {
+          throw Orthanc::OrthancException(Orthanc::ErrorCode_InternalError,
+                                          "Multiple instances with the same SOP Instance UID");
+        }
+      }
+    }
+  }
+}
+
+
+static bool EncodeStructureSetMesh(std::string& stl,
+                                   const StructureSet& structureSet,
+                                   const StructureSetGeometry& geometry,
+                                   const std::set<std::string>& roiNames,
+                                   unsigned int resolution,
+                                   bool smooth)
+{
+  if (resolution < 1 ||
+      structureSet.GetPolygonsCount() < 1)
   {
     throw Orthanc::OrthancException(Orthanc::ErrorCode_ParameterOutOfRange);
   }
@@ -1187,12 +1342,14 @@ bool EncodeStructureSetMesh(std::string& stl,
     throw Orthanc::OrthancException(Orthanc::ErrorCode_InternalError);
   }
 
-  // TODO - Axes could be retrieved from the referenced CT volume
-  Vector3D axisX(1, 0, 0);
-  Vector3D axisY = Vector3D::CrossProduct(geometry.GetSlicesNormal(), axisX);
+  Vector3D axisX, axisY;
+  GetReferencedVolumeAxes(axisX, axisY, structureSet);
+
+  Vector3D axisZ = Vector3D::CrossProduct(axisX, axisY);
 
   if (!IsNear(1, axisX.ComputeNorm()) ||
-      !IsNear(1, axisY.ComputeNorm()))
+      !IsNear(1, axisY.ComputeNorm()) ||
+      !Vector3D::AreParallel(axisZ, geometry.GetSlicesNormal()))
   {
     throw Orthanc::OrthancException(Orthanc::ErrorCode_InternalError);
   }
@@ -1215,61 +1372,43 @@ bool EncodeStructureSetMesh(std::string& stl,
   for (size_t i = 0; i < structureSet.GetPolygonsCount(); i++)
   {
     const StructurePolygon& polygon = structureSet.GetPolygon(i);
-    if (roiNames.find(polygon.GetRoiName()) == roiNames.end())
+    if (roiNames.find(polygon.GetRoiName()) != roiNames.end())
     {
-      // This polygon doesn't correspond to a ROI of interest
-      continue;
+      // This polygon corresponds to a ROI of interest
+
+      size_t z;
+      if (geometry.LookupSliceIndex(z, polygon))
+      {
+        std::vector<Orthanc::ImageProcessing::ImagePoint> points;
+        points.reserve(polygon.GetPointsCount());
+
+        for (size_t j = 0; j < polygon.GetPointsCount(); j++)
+        {
+          const Vector3D& point = polygon.GetPoint(j);
+          double x = (Vector3D::DotProduct(point, axisX) - extent.GetMinX()) / extent.GetWidth() * static_cast<double>(resolution);
+          double y = (Vector3D::DotProduct(point, axisY) - extent.GetMinY()) / extent.GetHeight() * static_cast<double>(resolution);
+          points.push_back(Orthanc::ImageProcessing::ImagePoint(static_cast<int32_t>(std::floor(x)),
+                                                                static_cast<int32_t>(std::floor(y))));
+        }
+
+        Orthanc::ImageAccessor slice;
+        slice.AssignWritable(Orthanc::PixelFormat_Grayscale8, resolution, resolution, resolution /* pitch */,
+                             reinterpret_cast<uint8_t*>(volume->GetScalarPointer()) + z * resolution * resolution);
+
+        XorFiller filler(slice);
+        Orthanc::ImageProcessing::FillPolygon(filler, points);
+      }
     }
-
-    size_t j;
-    if (!geometry.LookupSliceIndex(j, polygon))
-    {
-      throw Orthanc::OrthancException(Orthanc::ErrorCode_InternalError);
-    }
-
-    std::vector<Orthanc::ImageProcessing::ImagePoint> points;
-    points.reserve(polygon.GetPointsCount());
-    for (size_t j = 0; j < polygon.GetPointsCount(); j++)
-    {
-      const Vector3D& point = polygon.GetPoint(j);
-      double x = (Vector3D::DotProduct(point, axisX) - extent.GetMinX()) / extent.GetWidth() * static_cast<double>(resolution);
-      double y = (Vector3D::DotProduct(point, axisY) - extent.GetMinY()) / extent.GetHeight() * static_cast<double>(resolution);
-      points.push_back(Orthanc::ImageProcessing::ImagePoint(static_cast<int32_t>(std::floor(x)),
-                                                            static_cast<int32_t>(std::floor(y))));
-    }
-
-    Orthanc::ImageAccessor slice;
-    slice.AssignWritable(Orthanc::PixelFormat_Grayscale8, resolution, resolution, resolution /* pitch */,
-                         reinterpret_cast<uint8_t*>(volume->GetScalarPointer()) + j * resolution * resolution);
-
-    XorFiller filler(slice);
-    Orthanc::ImageProcessing::FillPolygon(filler, points);
   }
 
-  volume->SetSpacing(
-    extent.GetWidth() / static_cast<double>(resolution),
-    extent.GetHeight() / static_cast<double>(resolution),
-    (geometry.GetMaxProjectionAlongNormal() - geometry.GetMinProjectionAlongNormal()) / static_cast<double>(depth));
+  volume->SetSpacing(extent.GetWidth() / static_cast<double>(resolution),
+                     extent.GetHeight() / static_cast<double>(resolution),
+                     geometry.GetSlicesSpacing());
 
   // TODO
   // volume->SetOrigin()
 
   return EncodeVolume(stl, volume.Get(), resolution, smooth);
-}
-
-
-static Orthanc::ParsedDicomFile* LoadInstance(const std::string& instanceId)
-{
-  std::string dicom;
-
-  if (!OrthancPlugins::RestApiGetString(dicom, "/instances/" + instanceId + "/file", false))
-  {
-    throw Orthanc::OrthancException(Orthanc::ErrorCode_UnknownResource);
-  }
-  else
-  {
-    return new Orthanc::ParsedDicomFile(dicom);
-  }
 }
 
 
@@ -1512,7 +1651,7 @@ void ExtractStl(OrthancPluginRestOutput* output,
 
   std::string stl;
   if (GetStringValue(dataset, DCM_MIMETypeOfEncapsulatedDocument) != Orthanc::MIME_STL ||
-      GetStringValue(dataset, DCM_SOPClassUID) != STL_SOP_CLASS_UID ||
+      GetStringValue(dataset, DCM_SOPClassUID) != UID_EncapsulatedSTLStorage ||
       !dicom->GetTagValue(stl, Orthanc::DICOM_TAG_ENCAPSULATED_DOCUMENT))
   {
     throw Orthanc::OrthancException(Orthanc::ErrorCode_BadRequest, "DICOM instance not encapsulating a STL model: " + instanceId);
