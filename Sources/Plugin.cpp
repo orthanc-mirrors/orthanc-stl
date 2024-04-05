@@ -58,9 +58,9 @@ void ReadStaticAsset(std::string& target,
 
 
 /**
- * As the Three.js static assets are gzipped by the
- * "EmbedStaticAssets.py" script, we use a cache to maintain the
- * uncompressed assets in order to avoid multiple gzip decodings.
+ * As the static assets are gzipped by the "EmbedStaticAssets.py"
+ * script, we use a cache to maintain the uncompressed assets in order
+ * to avoid multiple gzip decodings.
  **/
 class ResourcesCache : public boost::noncopyable
 {
@@ -133,21 +133,44 @@ void ServeFile(OrthancPluginRestOutput* output,
 
   std::string file = request->groups[0];
 
-  if (file == "three.html")
-  {
-    std::string s;
-    Orthanc::EmbeddedResources::GetFileResource(s, Orthanc::EmbeddedResources::THREE_HTML);
-    OrthancPluginAnswerBuffer(OrthancPlugins::GetGlobalContext(), output, s.c_str(), s.size(), Orthanc::EnumerationToString(Orthanc::MimeType_Html));
-  }
-  else if (file == "three.js")
-  {
-    std::string s;
-    Orthanc::EmbeddedResources::GetFileResource(s, Orthanc::EmbeddedResources::THREE_JS);
-    OrthancPluginAnswerBuffer(OrthancPlugins::GetGlobalContext(), output, s.c_str(), s.size(), Orthanc::EnumerationToString(Orthanc::MimeType_JavaScript));
-  }
-  else if (boost::starts_with(file, "libs/"))
+  if (boost::starts_with(file, "libs/"))
   {
     cache_.Answer(output, file.substr(5));
+  }
+  else
+  {
+    Orthanc::EmbeddedResources::FileResourceId resourceId;
+    Orthanc::MimeType mimeType;
+
+    if (file == "three.html")
+    {
+      resourceId = Orthanc::EmbeddedResources::THREE_HTML;
+      mimeType = Orthanc::MimeType_Html;
+    }
+    else if (file == "three.js")
+    {
+      resourceId = Orthanc::EmbeddedResources::THREE_JS;
+      mimeType = Orthanc::MimeType_JavaScript;
+    }
+    else if (file == "o3dv.html")
+    {
+      resourceId = Orthanc::EmbeddedResources::O3DV_HTML;
+      mimeType = Orthanc::MimeType_Html;
+    }
+    else if (file == "o3dv.js")
+    {
+      resourceId = Orthanc::EmbeddedResources::O3DV_JS;
+      mimeType = Orthanc::MimeType_JavaScript;
+    }
+    else
+    {
+      OrthancPluginSendHttpStatusCode(OrthancPlugins::GetGlobalContext(), output, 404);
+      return;
+    }
+
+    std::string s;
+    Orthanc::EmbeddedResources::GetFileResource(s, resourceId);
+    OrthancPluginAnswerBuffer(OrthancPlugins::GetGlobalContext(), output, s.c_str(), s.size(), Orthanc::EnumerationToString(mimeType));
   }
 }
 

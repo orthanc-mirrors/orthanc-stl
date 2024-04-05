@@ -52,6 +52,30 @@ mkdir -p ${ROOT_DIR}/JavaScriptLibraries/dist/
 
 
 ##
+## Building O3DV (Online 3D Viewer)
+## https://github.com/kovacsv/Online3DViewer
+##
+
+O3DV=Online3DViewer-0.12.0
+
+echo "Creating the distribution of O3DV from $O3DV"
+
+if [ ! -f "${ROOT_DIR}/JavaScriptLibraries/${O3DV}.tar.gz" ]; then
+    mkdir -p "${ROOT_DIR}/JavaScriptLibraries"
+    ( cd ${ROOT_DIR}/JavaScriptLibraries && \
+          wget https://orthanc.uclouvain.be/downloads/third-party-downloads/STL/${O3DV}.tar.gz )
+fi
+
+docker run -t ${DOCKER_FLAGS} --rm \
+       --user $(id -u):$(id -g) \
+       -v ${ROOT_DIR}/Resources/CreateJavaScriptLibraries/build-o3dv.sh:/source/build-o3dv.sh:ro \
+       -v ${ROOT_DIR}/JavaScriptLibraries/${O3DV}.tar.gz:/source/${O3DV}.tar.gz:ro \
+       -v ${ROOT_DIR}/JavaScriptLibraries/dist/:/target:rw \
+       ${IMAGE} \
+       bash /source/build-o3dv.sh ${O3DV}
+
+
+##
 ## Building Three.js
 ##
 

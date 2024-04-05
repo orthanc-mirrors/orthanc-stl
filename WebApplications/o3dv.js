@@ -56,6 +56,6 @@ window.addEventListener ('load', () => {
   });
 
   viewer.LoadModelFromInputFiles ([
-    new OV.InputFile('model.stl', OV.FileSource.Url, '../../instances/' + instance + '/stl'),
+    new OV.InputFile('model.stl', OV.FileSource.Url, '../../instances/' + instanceId + '/stl'),
   ]);
 });
