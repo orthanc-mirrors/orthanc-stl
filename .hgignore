@@ -4,8 +4,8 @@
 syntax: glob
 *~
 ThirdPartyDownloads/
-Three/three.js-*.tar.gz
-Three/dist
+JavaScriptLibraries/three.js-*.tar.gz
+JavaScriptLibraries/dist
 i/
 s/
 *.orig

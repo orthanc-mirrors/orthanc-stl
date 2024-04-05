@@ -21,17 +21,16 @@
 
 
 
-# This command-line script uses the "npm" tool to populate the "dist"
-# folder of Three.js. It uses Docker to this end, in order to be
-# usable on our CIS.
+# This command-line script uses the "npm" tool to populate the
+# "JavaScriptLibraries/dist" folder. It uses Docker to this end, in
+# order to be usable on our CIS.
 
 set -ex
 
-if [ "$1" = "" ]; then
-    PACKAGE=three.js-r154-sources
-else
-    PACKAGE=$1
-fi
+
+##
+## Prepare a Docker container with npm
+##
 
 if [ -t 1 ]; then
     # TTY is available => use interactive mode
@@ -41,28 +40,35 @@ fi
 ROOT_DIR=`dirname $(readlink -f $0)`/..
 IMAGE=orthanc-stl-node
 
-echo "Creating the distribution of Three.js from $PACKAGE"
-
-if [ -e "${ROOT_DIR}/Three/dist/" ]; then
+if [ -e "${ROOT_DIR}/JavaScriptLibraries/dist/" ]; then
     echo "Target folder is already existing, aborting"
     exit -1
 fi
 
-if [ ! -f "${ROOT_DIR}/Three/${PACKAGE}.tar.gz" ]; then
-    mkdir -p "${ROOT_DIR}/Three"
-    ( cd ${ROOT_DIR}/Three && \
-          wget https://orthanc.uclouvain.be/downloads/third-party-downloads/${PACKAGE}.tar.gz )
-fi
+mkdir -p ${ROOT_DIR}/JavaScriptLibraries/dist/
 
-mkdir -p ${ROOT_DIR}/Three/dist/
-
-( cd ${ROOT_DIR}/Resources/CreateThreeDist && \
+( cd ${ROOT_DIR}/Resources/CreateJavaScriptLibraries && \
       docker build --no-cache -t ${IMAGE} . )
+
+
+##
+## Building Three.js
+##
+
+THREE=three.js-r154-sources
+
+echo "Creating the distribution of Three.js from $THREE"
+
+if [ ! -f "${ROOT_DIR}/JavaScriptLibraries/${THREE}.tar.gz" ]; then
+    mkdir -p "${ROOT_DIR}/JavaScriptLibraries"
+    ( cd ${ROOT_DIR}/JavaScriptLibraries && \
+          wget https://orthanc.uclouvain.be/downloads/third-party-downloads/${THREE}.tar.gz )
+fi
 
 docker run -t ${DOCKER_FLAGS} --rm \
        --user $(id -u):$(id -g) \
-       -v ${ROOT_DIR}/Resources/CreateThreeDist/build.sh:/source/build.sh:ro \
-       -v ${ROOT_DIR}/Three/${PACKAGE}.tar.gz:/source/${PACKAGE}.tar.gz:ro \
-       -v ${ROOT_DIR}/Three/dist/:/target:rw \
+       -v ${ROOT_DIR}/Resources/CreateJavaScriptLibraries/build-three.sh:/source/build-three.sh:ro \
+       -v ${ROOT_DIR}/JavaScriptLibraries/${THREE}.tar.gz:/source/${THREE}.tar.gz:ro \
+       -v ${ROOT_DIR}/JavaScriptLibraries/dist/:/target:rw \
        ${IMAGE} \
-       bash /source/build.sh ${PACKAGE}
+       bash /source/build-three.sh ${THREE}
