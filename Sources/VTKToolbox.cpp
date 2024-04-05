@@ -216,7 +216,7 @@ namespace VTKToolbox
       nifti_image* image_;
 
     public:
-      NiftiHeader(const std::string& nifti)
+      explicit NiftiHeader(const std::string& nifti)
       {
         nifti_1_header header;
         if (nifti.size() < sizeof(header))

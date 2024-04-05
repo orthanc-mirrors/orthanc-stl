@@ -23,24 +23,16 @@
 
 
 #include "StructureSetGeometry.h"
-#include "StructureSet.h"
 #include "STLToolbox.h"
-#include "StructurePolygon.h"
 #include "VTKToolbox.h"
-#include "Vector3D.h"
-#include "Toolbox.h"
-#include "Extent2D.h"
-
-#include "../Resources/Orthanc/Plugins/OrthancPluginCppWrapper.h"
 
 #include <EmbeddedResources.h>
 
-#include <DicomFormat/DicomInstanceHasher.h>
+#include "../Resources/Orthanc/Plugins/OrthancPluginCppWrapper.h"
+
 #include <DicomParsing/FromDcmtkBridge.h>
-#include <DicomParsing/ParsedDicomFile.h>
 #include <Images/ImageProcessing.h>
 #include <Logging.h>
-#include <OrthancFramework.h>
 #include <SerializationToolbox.h>
 #include <SystemToolbox.h>
 
@@ -182,38 +174,41 @@ void ServeFile(OrthancPluginRestOutput* output,
 #include <dcmtk/dcmdata/dcuid.h>
 
 
-class XorFiller : public Orthanc::ImageProcessing::IPolygonFiller
+namespace
 {
-private:
-  Orthanc::ImageAccessor& target_;
-
-public:
-  XorFiller(Orthanc::ImageAccessor& target) :
-    target_(target)
+  class XorFiller : public Orthanc::ImageProcessing::IPolygonFiller
   {
-  }
+  private:
+    Orthanc::ImageAccessor& target_;
 
-  virtual void Fill(int y,
-                    int x1,
-                    int x2) ORTHANC_OVERRIDE
-  {
-    assert(x1 <= x2);
-
-    if (y >= 0 &&
-        y < static_cast<int>(target_.GetHeight()))
+  public:
+    explicit XorFiller(Orthanc::ImageAccessor& target) :
+      target_(target)
     {
-      x1 = std::max(x1, 0);
-      x2 = std::min(x2, static_cast<int>(target_.GetWidth()) - 1);
+    }
 
-      uint8_t* p = reinterpret_cast<uint8_t*>(target_.GetRow(y)) + x1;
+    virtual void Fill(int y,
+                      int x1,
+                      int x2) ORTHANC_OVERRIDE
+    {
+      assert(x1 <= x2);
 
-      for (int i = x1; i <= x2; i++, p++)
+      if (y >= 0 &&
+          y < static_cast<int>(target_.GetHeight()))
       {
-        *p = (*p ^ 0xff);
+        x1 = std::max(x1, 0);
+        x2 = std::min(x2, static_cast<int>(target_.GetWidth()) - 1);
+
+        uint8_t* p = reinterpret_cast<uint8_t*>(target_.GetRow(y)) + x1;
+
+        for (int i = x1; i <= x2; i++, p++)
+        {
+          *p = (*p ^ 0xff);
+        }
       }
     }
-  }
-};
+  };
+}
 
 
 static Orthanc::ParsedDicomFile* LoadInstance(const std::string& instanceId)
@@ -765,7 +760,7 @@ extern "C"
 
       std::map<std::string, std::string> dictionary;
       dictionary["HAS_CREATE_DICOM_STL"] = (hasCreateDicomStl_ ? "true" : "false");
-      dictionary["SHOW_NIFTI_BUTTON"] = (configuration.GetBooleanValue("NIfTI", false) ? "true" : "false");
+      dictionary["SHOW_NIFTI_BUTTON"] = (configuration.GetBooleanValue("EnableNIfTI", false) ? "true" : "false");
       explorer = Orthanc::Toolbox::SubstituteVariables(explorer, dictionary);
 
       OrthancPlugins::ExtendOrthancExplorer(ORTHANC_PLUGIN_NAME, explorer);

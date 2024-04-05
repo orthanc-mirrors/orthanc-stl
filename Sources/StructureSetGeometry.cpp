@@ -176,7 +176,7 @@ StructureSetGeometry::StructureSetGeometry(const StructureSet& structures,
 
     std::list<size_t>::const_iterator it = candidates.begin();
     size_t reference = *it;
-    it++;
+    ++it;
 
     while (it != candidates.end())
     {
@@ -190,7 +190,7 @@ StructureSetGeometry::StructureSetGeometry(const StructureSet& structures,
         next.push_back(*it);
       }
 
-      it++;
+      ++it;
     }
 
     if (first ||
