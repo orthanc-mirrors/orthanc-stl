@@ -25,6 +25,22 @@
 const STL_PLUGIN_SOP_CLASS_UID_STL = '1.2.840.10008.5.1.4.1.1.104.3';
 const STL_PLUGIN_SOP_CLASS_UID_RT_STRUCT = '1.2.840.10008.5.1.4.1.1.481.3';
 
+
+function AddStlViewer(target, name, callback) {
+  var li = $('<li>', {
+    name: name,
+  }).click(callback);
+
+  li.append($('<a>', {
+    href: '#',
+    rel: 'close',
+    text: name
+  }));
+
+  target.append(li);
+}
+
+
 function AddOpenStlViewerButton(instanceId, id, parent) {
   var b = $('<a>')
       .attr('id', id)
@@ -36,10 +52,30 @@ function AddOpenStlViewerButton(instanceId, id, parent) {
       .button();
 
   b.insertAfter($('#' + parent));
+
   b.click(function() {
-    if ($.mobile.pageData) {
+    var viewers = $('<ul>')
+        .attr('data-divider-theme', 'd')
+        .attr('data-role', 'listview');
+
+    AddStlViewer(viewers, 'Basic viewer built using Three.js', function() {
       window.open('../stl/app/three.html?instance=' + instanceId);
-    }
+    });
+
+    AddStlViewer(viewers, 'Online3DViewer', function() {
+      window.open('../stl/app/o3dv.html?instance=' + instanceId);
+    });
+
+    // Launch the dialog
+    $('#dialog').simpledialog2({
+      mode: 'blank',
+      animate: false,
+      headerText: 'Choose STL viewer',
+      headerClose: true,
+      forceInput: false,
+      width: '100%',
+      blankContent: viewers
+    });
   });
 }
 
