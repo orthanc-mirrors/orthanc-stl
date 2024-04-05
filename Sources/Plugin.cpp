@@ -46,6 +46,7 @@
 
 #include <vtkNew.h>
 
+#include <boost/algorithm/string.hpp>
 #include <boost/thread/shared_mutex.hpp>
 
 #define ORTHANC_PLUGIN_NAME  "stl"
@@ -132,21 +133,21 @@ void ServeFile(OrthancPluginRestOutput* output,
 
   std::string file = request->groups[0];
 
-  if (file == "viewer.html")
+  if (file == "three.html")
   {
     std::string s;
-    Orthanc::EmbeddedResources::GetFileResource(s, Orthanc::EmbeddedResources::VIEWER_HTML);
+    Orthanc::EmbeddedResources::GetFileResource(s, Orthanc::EmbeddedResources::THREE_HTML);
     OrthancPluginAnswerBuffer(OrthancPlugins::GetGlobalContext(), output, s.c_str(), s.size(), Orthanc::EnumerationToString(Orthanc::MimeType_Html));
   }
-  else if (file == "viewer.js")
+  else if (file == "three.js")
   {
     std::string s;
-    Orthanc::EmbeddedResources::GetFileResource(s, Orthanc::EmbeddedResources::VIEWER_JS);
+    Orthanc::EmbeddedResources::GetFileResource(s, Orthanc::EmbeddedResources::THREE_JS);
     OrthancPluginAnswerBuffer(OrthancPlugins::GetGlobalContext(), output, s.c_str(), s.size(), Orthanc::EnumerationToString(Orthanc::MimeType_JavaScript));
   }
-  else
+  else if (boost::starts_with(file, "libs/"))
   {
-    cache_.Answer(output, file);
+    cache_.Answer(output, file.substr(5));
   }
 }
 

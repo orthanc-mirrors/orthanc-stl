@@ -169,8 +169,10 @@ endif()
 #####################################################################
 
 EmbedResources(
-  VIEWER_HTML        ${CMAKE_SOURCE_DIR}/Sources/viewer.html
-  VIEWER_JS          ${CMAKE_SOURCE_DIR}/Sources/viewer.js
+  THREE_HTML         ${CMAKE_SOURCE_DIR}/WebApplications/three.html
+  THREE_JS           ${CMAKE_SOURCE_DIR}/WebApplications/three.js
+  O3DV_HTML          ${CMAKE_SOURCE_DIR}/WebApplications/o3dv.html
+  O3DV_JS            ${CMAKE_SOURCE_DIR}/WebApplications/o3dv.js
   ORTHANC_EXPLORER   ${CMAKE_SOURCE_DIR}/Sources/OrthancExplorer.js
   )
 

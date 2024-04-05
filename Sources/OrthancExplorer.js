@@ -38,7 +38,7 @@ function AddOpenStlViewerButton(instanceId, id, parent) {
   b.insertAfter($('#' + parent));
   b.click(function() {
     if ($.mobile.pageData) {
-      window.open('../stl/app/viewer.html?instance=' + instanceId);
+      window.open('../stl/app/three.html?instance=' + instanceId);
     }
   });
 }

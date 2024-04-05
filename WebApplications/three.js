@@ -24,12 +24,12 @@
 
 import * as THREE from 'three';
 
-import { OrbitControls } from './OrbitControls.js';
-import { STLLoader } from './STLLoader.js';
+import { OrbitControls } from './libs/OrbitControls.js';
+import { STLLoader } from './libs/STLLoader.js';
 
 
 // http://stackoverflow.com/a/21903119/881731
-function GetUrlParameter(sParam) 
+function GetUrlParameter(sParam)
 {
   var sPageURL = decodeURIComponent(window.location.search.substring(1));
   var sURLVariables = sPageURL.split('&');
@@ -62,7 +62,7 @@ scene.add(light);
 const light2 = new THREE.PointLight(0xaaaaaa, 2);
 light2.position.set(10, 10, 10);
 scene.add(light2);
-  
+
 const loader = new STLLoader()
 loader.load(
   //'../../instances/' + instanceId + '/content/0042-0011',
@@ -107,7 +107,7 @@ loader.load(
 
       renderer.render(scene, camera);
     }
-    
+
     animate();
 
     function onWindowResize() {
