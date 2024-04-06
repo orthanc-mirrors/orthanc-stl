@@ -1,0 +1,22 @@
+cff-version: "1.1.0"
+message: "If you use this software, please cite it using these metadata."
+title: Orthanc STL
+abstract: "Orthanc is a lightweight open-source DICOM server for medical imaging supporting representational state transfer (REST)."
+authors:
+  -
+    affiliation: UCLouvain
+    family-names: Fierens
+    given-names: Amaury
+  -
+    affiliation: UCLouvain
+    family-names: Gregoir
+    given-names: Thibault
+  -
+    affiliation: UCLouvain
+    family-names: Jodogne
+    given-names: "Sébastien"
+doi: "10.1145/3632047.3632051"
+license: "GPL-3.0-or-later"
+repository-code: "https://orthanc.uclouvain.be/hg/orthanc-stl/"
+version: "1.0"
+date-released: 2024-04-06
