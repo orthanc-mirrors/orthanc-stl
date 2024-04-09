@@ -30,6 +30,7 @@
 
 #include "../Resources/Orthanc/Plugins/OrthancPluginCppWrapper.h"
 
+#include <Cache/MemoryStringCache.h>
 #include <DicomParsing/FromDcmtkBridge.h>
 #include <Images/ImageProcessing.h>
 #include <Logging.h>
@@ -123,7 +124,7 @@ void ServeFile(OrthancPluginRestOutput* output,
     return;
   }
 
-  std::string file = request->groups[0];
+  const std::string file = request->groups[0];
 
   if (boost::starts_with(file, "libs/"))
   {
@@ -701,6 +702,173 @@ void EncodeNifti(OrthancPluginRestOutput* output,
 }
 
 
+void ServeNexusAssets(OrthancPluginRestOutput* output,
+                      const char* url,
+                      const OrthancPluginHttpRequest* request)
+{
+  if (request->method != OrthancPluginHttpMethod_Get)
+  {
+    OrthancPluginSendMethodNotAllowed(OrthancPlugins::GetGlobalContext(), output, "GET");
+    return;
+  }
+
+  const std::string file = request->groups[0];
+
+  Orthanc::EmbeddedResources::FileResourceId resourceId;
+  Orthanc::MimeType mimeType;
+
+  if (file == "threejs.html")
+  {
+    resourceId = Orthanc::EmbeddedResources::NEXUS_HTML;
+    mimeType = Orthanc::MimeType_Html;
+  }
+  else if (file == "js/meco.js")
+  {
+    resourceId = Orthanc::EmbeddedResources::NEXUS_MECO_JS;
+    mimeType = Orthanc::MimeType_JavaScript;
+  }
+  else if (file == "js/nexus.js")
+  {
+    resourceId = Orthanc::EmbeddedResources::NEXUS_JS;
+    mimeType = Orthanc::MimeType_JavaScript;
+  }
+  else if (file == "js/nexus_three.js")
+  {
+    resourceId = Orthanc::EmbeddedResources::NEXUS_THREE_JS;
+    mimeType = Orthanc::MimeType_JavaScript;
+  }
+  else if (file == "js/TrackballControls.js")
+  {
+    resourceId = Orthanc::EmbeddedResources::NEXUS_TRACKBALL_JS;
+    mimeType = Orthanc::MimeType_JavaScript;
+  }
+  else
+  {
+    OrthancPluginSendHttpStatusCode(OrthancPlugins::GetGlobalContext(), output, 404);
+    return;
+  }
+
+  std::string s;
+  Orthanc::EmbeddedResources::GetFileResource(s, resourceId);
+  OrthancPluginAnswerBuffer(OrthancPlugins::GetGlobalContext(), output, s.c_str(), s.size(), Orthanc::EnumerationToString(mimeType));
+}
+
+
+static Orthanc::MemoryStringCache nexusCache_;
+
+void ExtractNexusModel(OrthancPluginRestOutput* output,
+                       const char* url,
+                       const OrthancPluginHttpRequest* request)
+{
+  OrthancPluginContext* context = OrthancPlugins::GetGlobalContext();
+
+  if (request->method != OrthancPluginHttpMethod_Get)
+  {
+    OrthancPluginSendMethodNotAllowed(context, output, "GET");
+    return;
+  }
+
+  const std::string instanceId = request->groups[0];
+
+  std::string range;
+
+  for (uint32_t i = 0; i < request->headersCount; i++)
+  {
+    if (std::string(request->headersKeys[i]) == "range")
+    {
+      range = request->headersValues[i];
+    }
+  }
+
+  static const std::string BYTES = "bytes=";
+
+  if (!boost::starts_with(range, BYTES))
+  {
+    OrthancPluginSendHttpStatusCode(context, output, 416);  // Range not satisfiable
+    return;
+  }
+
+  std::vector<std::string> tokens;
+  Orthanc::Toolbox::TokenizeString(tokens, range.substr(BYTES.length()), '-');
+
+  uint64_t start, end;
+
+  if (tokens.size() != 2 ||
+      !Orthanc::SerializationToolbox::ParseUnsignedInteger64(start, tokens[0]) ||
+      !Orthanc::SerializationToolbox::ParseUnsignedInteger64(end, tokens[1]) ||
+      start < 0 ||
+      start > end)
+  {
+    OrthancPluginSendHttpStatusCode(context, output, 416);  // Range not satisfiable
+    return;
+  }
+
+  uint64_t modelSize;
+  std::string part;
+
+#if 0
+  {
+    // Use no cache
+    std::string model;
+    if (!OrthancPlugins::RestApiGetString(model, "/instances/" + instanceId + "/content/4205-1001", false))
+    {
+      OrthancPluginSendHttpStatusCode(context, output, 404);
+      return;
+    }
+
+    modelSize = model.size();
+
+    if (end >= modelSize)
+    {
+      OrthancPluginSendHttpStatusCode(context, output, 416);  // Range not satisfiable
+      return;
+    }
+
+    part = model.substr(start, end - start + 1);
+  }
+#else
+  {
+    Orthanc::MemoryStringCache::Accessor accessor(nexusCache_);
+
+    std::string model;
+    if (!accessor.Fetch(model, instanceId))
+    {
+      if (OrthancPlugins::RestApiGetString(model, "/instances/" + instanceId + "/content/4205-1001", false))
+      {
+        accessor.Add(instanceId, model);
+      }
+      else
+      {
+        OrthancPluginSendHttpStatusCode(context, output, 404);
+        return;
+      }
+    }
+
+    modelSize = model.size();
+
+    if (end >= modelSize)
+    {
+      OrthancPluginSendHttpStatusCode(context, output, 416);  // Range not satisfiable
+      return;
+    }
+
+    part = model.substr(start, end - start + 1);
+  }
+#endif
+
+  std::string s = ("bytes " + boost::lexical_cast<std::string>(start) + "-" +
+                   boost::lexical_cast<std::string>(end) + "/" +
+                   boost::lexical_cast<std::string>(modelSize));
+  OrthancPluginSetHttpHeader(context, output, "Content-Range", s.c_str());
+
+  s = boost::lexical_cast<std::string>(part.size());
+  OrthancPluginSetHttpHeader(context, output, "Content-Length", s.c_str());
+  OrthancPluginSetHttpHeader(context, output, "Content-Type", "application/octet-stream");
+
+  OrthancPluginSendHttpStatus(context, output, 206 /* partial content */, part.c_str(), part.size());
+}
+
+
 extern "C"
 {
   ORTHANC_PLUGINS_API int32_t OrthancPluginInitialize(OrthancPluginContext* context)
@@ -747,6 +915,10 @@ extern "C"
       OrthancPlugins::RegisterRestCallback<EncodeStructureSet>("/stl/encode-rtstruct", true);
       OrthancPlugins::RegisterRestCallback<EncodeNifti>("/stl/encode-nifti", true);
     }
+
+    nexusCache_.SetMaximumSize(512 * 1024 * 1024);  // Cache of 512MB for Nexus
+    OrthancPlugins::RegisterRestCallback<ExtractNexusModel>("/instances/([0-9a-f-]+)/nexus", true);
+    OrthancPlugins::RegisterRestCallback<ServeNexusAssets>("/stl/nexus/(.*)", true);
 
     OrthancPlugins::OrthancConfiguration globalConfiguration;
     OrthancPlugins::OrthancConfiguration configuration;

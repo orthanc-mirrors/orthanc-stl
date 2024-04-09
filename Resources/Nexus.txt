@@ -1,0 +1,7 @@
+Homepage: https://vcg.isti.cnr.it/nexus/
+
+GitHub: https://github.com/cnr-isti-vclab/nexus
+
+The files in this folder come from folder "html" in release 4.2 (Nexus 2018).
+
+WARNING: Releases 4.2.1, 4.2.2, and 4.3 do not seem to work anymore.

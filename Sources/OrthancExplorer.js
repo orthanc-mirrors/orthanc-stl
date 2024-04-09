@@ -24,6 +24,9 @@
 
 const STL_PLUGIN_SOP_CLASS_UID_STL = '1.2.840.10008.5.1.4.1.1.104.3';
 const STL_PLUGIN_SOP_CLASS_UID_RT_STRUCT = '1.2.840.10008.5.1.4.1.1.481.3';
+const STL_PLUGIN_SOP_CLASS_UID_RAW = '1.2.840.10008.5.1.4.1.1.66';
+
+const STL_PLUGIN_NEXUS_CREATOR_VERSION_UID = '1.2.826.0.1.3680043.8.498.90514926286349109728701975613711986292';
 
 
 function AddStlViewer(target, name, callback) {
@@ -391,11 +394,36 @@ function AddImportSTLButton(studyId) {
 }
 
 
+function AddOpenStlNexusButton(instanceId, id, parent) {
+  $.ajax({
+    url: '/instances/' + instanceId + '/content/0008,9123',
+    success: function(creatorVersionUid) {
+      if (creatorVersionUid == STL_PLUGIN_NEXUS_CREATOR_VERSION_UID) {
+        var b = $('<a>')
+            .attr('id', id)
+            .attr('data-role', 'button')
+            .attr('href', '#')
+            .attr('data-icon', 'search')
+            .attr('data-theme', 'e')
+            .text('Nexus 3D viewer')
+            .button();
+
+        b.insertAfter($('#' + parent));
+
+        b.click(function() {
+          window.open('../stl/nexus/threejs.html?model=../../instances/' + instanceId + '/nexus');
+        });
+      }
+    }
+  });
+}
+
 
 $('#series').live('pagebeforeshow', function() {
   var seriesId = $.mobile.pageData.uuid;
 
   $('#stl-viewer-series').remove();
+  $('#stl-nexus-series').remove();
   $('#stl-generate-rtstruct-series').remove();
 
   GetResource('/series/' + seriesId, function(series) {
@@ -413,6 +441,9 @@ $('#series').live('pagebeforeshow', function() {
           else if (sopClassUid == STL_PLUGIN_SOP_CLASS_UID_RT_STRUCT) {
             AddGenerateFromRtStructButton(instanceId, 'stl-generate-rtstruct-series', 'series-info');
           }
+          else if (sopClassUid == STL_PLUGIN_SOP_CLASS_UID_RAW) {
+            AddOpenStlNexusButton(instanceId, 'stl-nexus-series', 'series-info');
+          }
 
         }
       });
@@ -425,6 +456,7 @@ $('#instance').live('pagebeforeshow', function() {
   var instanceId = $.mobile.pageData.uuid;
 
   $('#stl-viewer-instance').remove();
+  $('#stl-nexus-instance').remove();
   $('#stl-generate-rtstruct-instance').remove();
 
   $.ajax({
@@ -437,6 +469,9 @@ $('#instance').live('pagebeforeshow', function() {
       }
       else if (sopClassUid == STL_PLUGIN_SOP_CLASS_UID_RT_STRUCT) {
         AddGenerateFromRtStructButton(instanceId, 'stl-generate-rtstruct-instance', 'instance-info');
+      }
+      else if (sopClassUid == STL_PLUGIN_SOP_CLASS_UID_RAW) {
+        AddOpenStlNexusButton(instanceId, 'stl-nexus-instance', 'instance-info');
       }
 
     }

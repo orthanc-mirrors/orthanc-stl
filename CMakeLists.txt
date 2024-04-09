@@ -174,6 +174,12 @@ EmbedResources(
   O3DV_HTML          ${CMAKE_SOURCE_DIR}/WebApplications/o3dv.html
   O3DV_JS            ${CMAKE_SOURCE_DIR}/WebApplications/o3dv.js
   ORTHANC_EXPLORER   ${CMAKE_SOURCE_DIR}/Sources/OrthancExplorer.js
+
+  NEXUS_HTML           ${CMAKE_SOURCE_DIR}/Resources/Nexus/threejs.html
+  NEXUS_JS             ${CMAKE_SOURCE_DIR}/Resources/Nexus/js/nexus.js
+  NEXUS_MECO_JS        ${CMAKE_SOURCE_DIR}/Resources/Nexus/js/meco.js
+  NEXUS_THREE_JS       ${CMAKE_SOURCE_DIR}/Resources/Nexus/js/nexus_three.js
+  NEXUS_TRACKBALL_JS   ${CMAKE_SOURCE_DIR}/Resources/Nexus/js/TrackballControls.js
   )
 
 add_custom_command(
