@@ -26,14 +26,15 @@ import io
 import os
 import sys
 
-if len(sys.argv) != 3:
-    raise Exception('Usage: %s [source folder] [target C++]' % sys.argv[0])
+if len(sys.argv) <= 2:
+    raise Exception('Usage: %s [target C++] [source folders]' % sys.argv[0])
 
-SOURCE = sys.argv[1]
-TARGET = sys.argv[2]
+SOURCES = sys.argv[2:]
+TARGET = sys.argv[1]
 
-if not os.path.isdir(SOURCE):
-    raise Exception('Nonexistent source folder: %s' % SOURCE)
+for source in SOURCES:
+    if not os.path.isdir(source):
+        raise Exception('Nonexistent source folder: %s' % source)
 
 
 def EncodeFileAsCString(f, variable, content):
@@ -94,33 +95,34 @@ static void Uncompress(std::string& target, const void* data, size_t size, const
     index = {}
     count = 0
 
-    for root, dirs, files in os.walk(SOURCE):
-        files.sort()
-        dirs.sort()
+    for source in SOURCES:
+        for root, dirs, files in os.walk(source):
+            files.sort()
+            dirs.sort()
 
-        for f in files:
-            fullPath = os.path.join(root, f)
-            relativePath = os.path.relpath(os.path.join(root, f), SOURCE)
-            variable = 'data_%06d' % count
+            for f in files:
+                fullPath = os.path.join(root, f)
+                relativePath = os.path.relpath(os.path.join(root, f), source)
+                variable = 'data_%06d' % count
 
-            with open(fullPath, 'rb') as source:
-                content = source.read()
+                with open(fullPath, 'rb') as f:
+                    content = f.read()
 
-            if sys.version_info < (3, 0):
-                # Python 2.7
-                fileobj = io.BytesIO()
-                gzip.GzipFile(fileobj=fileobj, mode='w', mtime=0).write(content)
-                compressed = fileobj.getvalue()
-            else:
-                # Python 3.x
-                compressed = gzip.compress(content, mtime=0)
+                if sys.version_info < (3, 0):
+                    # Python 2.7
+                    fileobj = io.BytesIO()
+                    gzip.GzipFile(fileobj=fileobj, mode='w', mtime=0).write(content)
+                    compressed = fileobj.getvalue()
+                else:
+                    # Python 3.x
+                    compressed = gzip.compress(content, mtime=0)
 
-            EncodeFileAsCString(g, variable, compressed)
-            WriteChecksum(g, variable + '_md5', content)
+                EncodeFileAsCString(g, variable, compressed)
+                WriteChecksum(g, variable + '_md5', content)
 
-            index[relativePath] = variable
+                index[relativePath] = variable
 
-            count += 1
+                count += 1
     
     g.write('void ReadStaticAsset(std::string& target, const std::string& path)\n')
     g.write('{\n')

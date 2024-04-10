@@ -22,6 +22,10 @@
  **/
 
 
+#if !defined(ORTHANC_ENABLE_NEXUS)
+#  error Macro ORTHANC_ENABLE_NEXUS must be defined
+#endif
+
 #include "StructureSetGeometry.h"
 #include "STLToolbox.h"
 #include "VTKToolbox.h"
@@ -30,7 +34,6 @@
 
 #include "../Resources/Orthanc/Plugins/OrthancPluginCppWrapper.h"
 
-#include <Cache/MemoryStringCache.h>
 #include <DicomParsing/FromDcmtkBridge.h>
 #include <Images/ImageProcessing.h>
 #include <Logging.h>
@@ -41,6 +44,11 @@
 
 #include <boost/algorithm/string.hpp>
 #include <boost/thread/shared_mutex.hpp>
+
+
+#if ORTHANC_ENABLE_NEXUS == 1
+#  include <Cache/MemoryStringCache.h>
+#endif
 
 #define ORTHANC_PLUGIN_NAME  "stl"
 
@@ -702,6 +710,8 @@ void EncodeNifti(OrthancPluginRestOutput* output,
 }
 
 
+#if ORTHANC_ENABLE_NEXUS == 1
+
 void ServeNexusAssets(OrthancPluginRestOutput* output,
                       const char* url,
                       const OrthancPluginHttpRequest* request)
@@ -868,6 +878,8 @@ void ExtractNexusModel(OrthancPluginRestOutput* output,
   OrthancPluginSendHttpStatus(context, output, 206 /* partial content */, part.c_str(), part.size());
 }
 
+#endif
+
 
 extern "C"
 {
@@ -916,9 +928,11 @@ extern "C"
       OrthancPlugins::RegisterRestCallback<EncodeNifti>("/stl/encode-nifti", true);
     }
 
+#if ORTHANC_ENABLE_NEXUS == 1
     nexusCache_.SetMaximumSize(512 * 1024 * 1024);  // Cache of 512MB for Nexus
     OrthancPlugins::RegisterRestCallback<ExtractNexusModel>("/instances/([0-9a-f-]+)/nexus", true);
     OrthancPlugins::RegisterRestCallback<ServeNexusAssets>("/stl/nexus/(.*)", true);
+#endif
 
     OrthancPlugins::OrthancConfiguration globalConfiguration;
     OrthancPlugins::OrthancConfiguration configuration;
@@ -933,6 +947,7 @@ extern "C"
       std::map<std::string, std::string> dictionary;
       dictionary["HAS_CREATE_DICOM_STL"] = (hasCreateDicomStl_ ? "true" : "false");
       dictionary["SHOW_NIFTI_BUTTON"] = (configuration.GetBooleanValue("EnableNIfTI", false) ? "true" : "false");
+      dictionary["IS_NEXUS_ENABLED"] = (ORTHANC_ENABLE_NEXUS == 1 ? "true" : "false");
       explorer = Orthanc::Toolbox::SubstituteVariables(explorer, dictionary);
 
       OrthancPlugins::ExtendOrthancExplorer(ORTHANC_PLUGIN_NAME, explorer);

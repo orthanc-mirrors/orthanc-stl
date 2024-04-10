@@ -395,27 +395,29 @@ function AddImportSTLButton(studyId) {
 
 
 function AddOpenStlNexusButton(instanceId, id, parent) {
-  $.ajax({
-    url: '/instances/' + instanceId + '/content/0008,9123',
-    success: function(creatorVersionUid) {
-      if (creatorVersionUid == STL_PLUGIN_NEXUS_CREATOR_VERSION_UID) {
-        var b = $('<a>')
-            .attr('id', id)
-            .attr('data-role', 'button')
-            .attr('href', '#')
-            .attr('data-icon', 'search')
-            .attr('data-theme', 'e')
-            .text('Nexus 3D viewer')
-            .button();
+  if (${IS_NEXUS_ENABLED}) {
+    $.ajax({
+      url: '/instances/' + instanceId + '/content/0008,9123',
+      success: function(creatorVersionUid) {
+        if (creatorVersionUid == STL_PLUGIN_NEXUS_CREATOR_VERSION_UID) {
+          var b = $('<a>')
+              .attr('id', id)
+              .attr('data-role', 'button')
+              .attr('href', '#')
+              .attr('data-icon', 'search')
+              .attr('data-theme', 'e')
+              .text('Nexus 3D viewer')
+              .button();
 
-        b.insertAfter($('#' + parent));
+          b.insertAfter($('#' + parent));
 
-        b.click(function() {
-          window.open('../stl/nexus/threejs.html?model=../../instances/' + instanceId + '/nexus');
-        });
+          b.click(function() {
+            window.open('../stl/nexus/threejs.html?model=../../instances/' + instanceId + '/nexus');
+          });
+        }
       }
-    }
-  });
+    });
+  }
 }
 
 
