@@ -705,7 +705,7 @@ extern "C"
 {
   ORTHANC_PLUGINS_API int32_t OrthancPluginInitialize(OrthancPluginContext* context)
   {
-    OrthancPlugins::SetGlobalContext(context);
+    OrthancPlugins::SetGlobalContext(context, ORTHANC_PLUGIN_NAME);
 
     /* Check the version of the Orthanc core */
     if (OrthancPluginCheckVersion(OrthancPlugins::GetGlobalContext()) == 0)
@@ -720,7 +720,9 @@ extern "C"
       return -1;
     }
 
-#if ORTHANC_FRAMEWORK_VERSION_IS_ABOVE(1, 7, 2)
+#if ORTHANC_FRAMEWORK_VERSION_IS_ABOVE(1, 12, 4)
+    Orthanc::Logging::InitializePluginContext(context, ORTHANC_PLUGIN_NAME);
+#elif ORTHANC_FRAMEWORK_VERSION_IS_ABOVE(1, 7, 2)
     Orthanc::Logging::InitializePluginContext(context);
 #else
     Orthanc::Logging::Initialize(context);
@@ -729,6 +731,7 @@ extern "C"
     Orthanc::InitializeFramework("", false);
 
     hasCreateDicomStl_ = OrthancPlugins::CheckMinimalOrthancVersion(1, 12, 1);
+    LOG(WARNING) << "Hello!";
 
     if (!hasCreateDicomStl_)
     {
