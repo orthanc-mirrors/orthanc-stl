@@ -58,8 +58,8 @@ set(ORTHANC_FRAMEWORK_VERSION "${ORTHANC_FRAMEWORK_DEFAULT_VERSION}" CACHE STRIN
 set(ORTHANC_FRAMEWORK_ARCHIVE "" CACHE STRING "Path to the Orthanc archive, if ORTHANC_FRAMEWORK_SOURCE is \"archive\"")
 set(ORTHANC_FRAMEWORK_ROOT "" CACHE STRING "Path to the Orthanc source directory, if ORTHANC_FRAMEWORK_SOURCE is \"path\"")
 
-# New in release 2.0
-set(ENABLE_NEXUS OFF CACHE BOOL "Include support for Nexus 3D models")
+# New in release 1.1
+set(ENABLE_NEXUS ON CACHE BOOL "Include support for Nexus 3D models")
 
 # Advanced parameters to fine-tune linking against system libraries
 SET(USE_SYSTEM_ORTHANC_SDK ON CACHE BOOL "Use the system version of the Orthanc plugin SDK")
@@ -116,7 +116,7 @@ include(${CMAKE_SOURCE_DIR}/Resources/Orthanc/Plugins/OrthancPluginsExports.cmak
 #####################################################################
 
 if (STATIC_BUILD OR NOT USE_SYSTEM_ORTHANC_SDK)
-  include_directories(${CMAKE_SOURCE_DIR}/Resources/Orthanc/Sdk-1.0.0)
+  include_directories(${CMAKE_SOURCE_DIR}/Resources/Orthanc/Sdk-1.2.0)
 else ()
   CHECK_INCLUDE_FILE_CXX(orthanc/OrthancCPlugin.h HAVE_ORTHANC_H)
   if (NOT HAVE_ORTHANC_H)
