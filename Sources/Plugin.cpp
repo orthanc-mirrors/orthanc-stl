@@ -53,6 +53,16 @@
 #define ORTHANC_PLUGIN_NAME  "stl"
 
 
+#if ORTHANC_ENABLE_NEXUS == 1
+static const char* const ORTHANC_STL_PRIVATE_CREATOR = "OrthancSTL";
+static const char* const ORTHANC_STL_MANUFACTURER = "ORTHANC^STL";
+static const uint16_t ORTHANC_STL_PRIVATE_GROUP = 0x4205u;
+static const uint16_t ORTHANC_STL_CREATOR_ELEMENT = 0x0010u;
+static const uint16_t ORTHANC_STL_NEXUS_ELEMENT = 0x1001u;
+static const Orthanc::DicomTag DICOM_TAG_CREATOR_VERSION_UID(0x0008, 0x9123);
+#endif
+
+
 // Forward declaration
 void ReadStaticAsset(std::string& target,
                      const std::string& path);
@@ -120,7 +130,6 @@ public:
 
 
 static ResourcesCache cache_;
-static bool hasCreateDicomStl_;
 
 void ServeFile(OrthancPluginRestOutput* output,
                const char* url,
@@ -878,6 +887,101 @@ void ExtractNexusModel(OrthancPluginRestOutput* output,
   OrthancPluginSendHttpStatus(context, output, 206 /* partial content */, part.c_str(), part.size());
 }
 
+
+static const char* GetCreatorVersionUid(const std::string& version)
+{
+  /**
+   * Each version of the STL plugin must provide a different value for
+   * the CreatorVersionUID (0008,9123) tag. A new UID can be generated
+   * by typing:
+   *
+   * $ python -c 'import pydicom; print(pydicom.uid.generate_uid())'
+   *
+   **/
+
+  if (version == "mainline")
+  {
+    return "1.2.826.0.1.3680043.8.498.90514926286349109728701975613711986292";
+  }
+  else
+  {
+    throw Orthanc::OrthancException(Orthanc::ErrorCode_InternalError);
+  }
+}
+
+
+void DicomizeNexusModel(OrthancPluginRestOutput* output,
+                        const char* url,
+                        const OrthancPluginHttpRequest* request)
+{
+  static const char* KEY_CONTENT = "Content";
+  static const char* KEY_PARENT = "Parent";
+  static const char* KEY_TAGS = "Tags";
+  static const char* KEY_PRIVATE_CREATOR = "PrivateCreator";
+
+  OrthancPluginContext* context = OrthancPlugins::GetGlobalContext();
+
+  if (request->method != OrthancPluginHttpMethod_Post)
+  {
+    OrthancPluginSendMethodNotAllowed(context, output, "POST");
+    return;
+  }
+
+  Json::Value body;
+  if (!Orthanc::Toolbox::ReadJson(body, request->body, request->bodySize) ||
+      body.type() != Json::objectValue ||
+      !body.isMember(KEY_TAGS) ||
+      body[KEY_TAGS].type() != Json::objectValue)
+  {
+    throw Orthanc::OrthancException(Orthanc::ErrorCode_BadRequest);
+  }
+
+  if (!body.isMember(KEY_CONTENT) ||
+      body[KEY_CONTENT].type() != Json::stringValue)
+  {
+    throw Orthanc::OrthancException(Orthanc::ErrorCode_BadRequest,
+                                    "POST body missing string field \"" + std::string(KEY_CONTENT) + "\"");
+  }
+
+  std::string nexus;
+  Orthanc::Toolbox::DecodeBase64(nexus, body[KEY_CONTENT].asString());
+
+  std::string raw;
+  Orthanc::Toolbox::EncodeDataUriScheme(raw, "application/octet-stream", nexus);
+
+  Json::Value creationBody = Json::objectValue;
+
+  creationBody[KEY_TAGS] = body[KEY_TAGS];
+  creationBody[KEY_TAGS][Orthanc::DICOM_TAG_MANUFACTURER.Format()] = ORTHANC_STL_MANUFACTURER;
+  creationBody[KEY_TAGS][Orthanc::DICOM_TAG_SOP_CLASS_UID.Format()] = "1.2.840.10008.5.1.4.1.1.66";
+  creationBody[KEY_TAGS][Orthanc::DICOM_TAG_MODALITY.Format()] = "OT";
+  creationBody[KEY_TAGS][DICOM_TAG_CREATOR_VERSION_UID.Format()] = GetCreatorVersionUid(ORTHANC_STL_VERSION);
+  creationBody[KEY_TAGS][Orthanc::DicomTag(ORTHANC_STL_PRIVATE_GROUP, ORTHANC_STL_CREATOR_ELEMENT).Format()] = ORTHANC_STL_PRIVATE_CREATOR;
+  creationBody[KEY_TAGS][Orthanc::DicomTag(ORTHANC_STL_PRIVATE_GROUP, ORTHANC_STL_NEXUS_ELEMENT).Format()] = raw;
+  creationBody[KEY_PRIVATE_CREATOR] = ORTHANC_STL_PRIVATE_CREATOR;
+
+  if (body.isMember(KEY_PARENT))
+  {
+    creationBody[KEY_PARENT] = body[KEY_PARENT];
+  }
+
+  std::string bodyString;
+  Orthanc::Toolbox::WriteFastJson(bodyString, creationBody);
+
+  std::string result;
+  if (OrthancPlugins::RestApiPost(result, "/tools/create-dicom",
+                                  bodyString.empty() ? NULL : bodyString.c_str(),
+                                  bodyString.size(), false))
+  {
+    OrthancPluginAnswerBuffer(context, output, result.empty() ? NULL : result.c_str(),
+                              result.size(), "application/json");
+  }
+  else
+  {
+    throw Orthanc::OrthancException(Orthanc::ErrorCode_BadRequest);
+  }
+}
+
 #endif
 
 
@@ -910,8 +1014,7 @@ extern "C"
 
     Orthanc::InitializeFramework("", false);
 
-    hasCreateDicomStl_ = OrthancPlugins::CheckMinimalOrthancVersion(1, 12, 1);
-    LOG(WARNING) << "Hello!";
+    const bool hasCreateDicomStl_ = OrthancPlugins::CheckMinimalOrthancVersion(1, 12, 1);
 
     if (!hasCreateDicomStl_)
     {
@@ -935,6 +1038,28 @@ extern "C"
     nexusCache_.SetMaximumSize(512 * 1024 * 1024);  // Cache of 512MB for Nexus
     OrthancPlugins::RegisterRestCallback<ExtractNexusModel>("/instances/([0-9a-f-]+)/nexus", true);
     OrthancPlugins::RegisterRestCallback<ServeNexusAssets>("/stl/nexus/(.*)", true);
+
+    const bool hasCreateNexus_ = OrthancPlugins::CheckMinimalOrthancVersion(1, 9, 4);
+
+    if (hasCreateNexus_)
+    {
+      OrthancPlugins::RegisterRestCallback<DicomizeNexusModel>("/stl/create-nexus", true);
+
+      if (OrthancPluginRegisterPrivateDictionaryTag(
+            context, ORTHANC_STL_PRIVATE_GROUP, ORTHANC_STL_CREATOR_ELEMENT, OrthancPluginValueRepresentation_LO,
+            "PrivateCreator", 1, 1, ORTHANC_STL_PRIVATE_CREATOR) != OrthancPluginErrorCode_Success ||
+          OrthancPluginRegisterPrivateDictionaryTag(
+            context, ORTHANC_STL_PRIVATE_GROUP, ORTHANC_STL_NEXUS_ELEMENT, OrthancPluginValueRepresentation_OB,
+            "NexusData", 1, 1, ORTHANC_STL_PRIVATE_CREATOR) != OrthancPluginErrorCode_Success)
+      {
+        LOG(ERROR) << "Cannot register the private DICOM tags for handling Nexus";
+      }
+    }
+    else
+    {
+      LOG(WARNING) << "Your version of Orthanc (" << std::string(context->orthancVersion)
+                   << ") is insufficient to create DICOM-ize Nexus models, it should be above 1.9.4";
+    }
 #endif
 
     OrthancPlugins::OrthancConfiguration globalConfiguration;
