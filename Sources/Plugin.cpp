@@ -943,12 +943,6 @@ void DicomizeNexusModel(OrthancPluginRestOutput* output,
                                     "POST body missing string field \"" + std::string(KEY_CONTENT) + "\"");
   }
 
-  std::string nexus;
-  Orthanc::Toolbox::DecodeBase64(nexus, body[KEY_CONTENT].asString());
-
-  std::string raw;
-  Orthanc::Toolbox::EncodeDataUriScheme(raw, "application/octet-stream", nexus);
-
   Json::Value creationBody = Json::objectValue;
 
   creationBody[KEY_TAGS] = body[KEY_TAGS];
@@ -957,7 +951,8 @@ void DicomizeNexusModel(OrthancPluginRestOutput* output,
   creationBody[KEY_TAGS][Orthanc::DICOM_TAG_MODALITY.Format()] = "OT";
   creationBody[KEY_TAGS][DICOM_TAG_CREATOR_VERSION_UID.Format()] = GetCreatorVersionUid(ORTHANC_STL_VERSION);
   creationBody[KEY_TAGS][Orthanc::DicomTag(ORTHANC_STL_PRIVATE_GROUP, ORTHANC_STL_CREATOR_ELEMENT).Format()] = ORTHANC_STL_PRIVATE_CREATOR;
-  creationBody[KEY_TAGS][Orthanc::DicomTag(ORTHANC_STL_PRIVATE_GROUP, ORTHANC_STL_NEXUS_ELEMENT).Format()] = raw;
+  creationBody[KEY_TAGS][Orthanc::DicomTag(ORTHANC_STL_PRIVATE_GROUP, ORTHANC_STL_NEXUS_ELEMENT).Format()] =
+    "data:application/octet-stream;base64," + body[KEY_CONTENT].asString();
   creationBody[KEY_PRIVATE_CREATOR] = ORTHANC_STL_PRIVATE_CREATOR;
 
   if (body.isMember(KEY_PARENT))
