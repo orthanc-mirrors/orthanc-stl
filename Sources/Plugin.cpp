@@ -60,6 +60,34 @@ static const uint16_t ORTHANC_STL_PRIVATE_GROUP = 0x4205u;
 static const uint16_t ORTHANC_STL_CREATOR_ELEMENT = 0x0010u;
 static const uint16_t ORTHANC_STL_NEXUS_ELEMENT = 0x1001u;
 static const Orthanc::DicomTag DICOM_TAG_CREATOR_VERSION_UID(0x0008, 0x9123);
+
+/**
+ * Each version of the STL plugin must provide a different value for
+ * the CreatorVersionUID (0008,9123) tag. A new UID can be generated
+ * by typing:
+ *
+ * $ python -c 'import pydicom; print(pydicom.uid.generate_uid())'
+ *
+ **/
+static const char* const ORTHANC_STL_CREATOR_VERSION_UID_MAINLINE = "1.2.826.0.1.3680043.8.498.90514926286349109728701975613711986292";
+
+static const char* const GetCreatorVersionUid(const std::string& version)
+{
+  if (version == "mainline")
+  {
+    return ORTHANC_STL_CREATOR_VERSION_UID_MAINLINE;
+  }
+  else
+  {
+    throw Orthanc::OrthancException(Orthanc::ErrorCode_InternalError);
+  }
+}
+
+static void FillOrthancExplorerCreatorVersionUid(std::map<std::string, std::string>& dictionary)
+{
+  dictionary["ORTHANC_STL_CREATOR_VERSION_UID_MAINLINE"] = ORTHANC_STL_CREATOR_VERSION_UID_MAINLINE;
+}
+
 #endif
 
 
@@ -888,28 +916,6 @@ void ExtractNexusModel(OrthancPluginRestOutput* output,
 }
 
 
-static const char* GetCreatorVersionUid(const std::string& version)
-{
-  /**
-   * Each version of the STL plugin must provide a different value for
-   * the CreatorVersionUID (0008,9123) tag. A new UID can be generated
-   * by typing:
-   *
-   * $ python -c 'import pydicom; print(pydicom.uid.generate_uid())'
-   *
-   **/
-
-  if (version == "mainline")
-  {
-    return "1.2.826.0.1.3680043.8.498.90514926286349109728701975613711986292";
-  }
-  else
-  {
-    throw Orthanc::OrthancException(Orthanc::ErrorCode_InternalError);
-  }
-}
-
-
 void DicomizeNexusModel(OrthancPluginRestOutput* output,
                         const char* url,
                         const OrthancPluginHttpRequest* request)
@@ -1083,6 +1089,8 @@ extern "C"
       dictionary["HAS_CREATE_DICOM_STL"] = (hasCreateDicomStl ? "true" : "false");
       dictionary["SHOW_NIFTI_BUTTON"] = (configuration.GetBooleanValue("EnableNIfTI", false) ? "true" : "false");
       dictionary["IS_NEXUS_ENABLED"] = (enableNexus ? "true" : "false");
+      FillOrthancExplorerCreatorVersionUid(dictionary);
+
       explorer = Orthanc::Toolbox::SubstituteVariables(explorer, dictionary);
 
       OrthancPlugins::ExtendOrthancExplorer(ORTHANC_PLUGIN_NAME, explorer);

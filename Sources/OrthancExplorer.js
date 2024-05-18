@@ -26,8 +26,6 @@ const STL_PLUGIN_SOP_CLASS_UID_STL = '1.2.840.10008.5.1.4.1.1.104.3';
 const STL_PLUGIN_SOP_CLASS_UID_RT_STRUCT = '1.2.840.10008.5.1.4.1.1.481.3';
 const STL_PLUGIN_SOP_CLASS_UID_RAW = '1.2.840.10008.5.1.4.1.1.66';
 
-const STL_PLUGIN_NEXUS_CREATOR_VERSION_UID = '1.2.826.0.1.3680043.8.498.90514926286349109728701975613711986292';
-
 
 function AddStlViewer(target, name, callback) {
   var li = $('<li>', {
@@ -399,7 +397,7 @@ function AddOpenStlNexusButton(instanceId, id, parent) {
     $.ajax({
       url: '/instances/' + instanceId + '/content/0008,9123',
       success: function(creatorVersionUid) {
-        if (creatorVersionUid == STL_PLUGIN_NEXUS_CREATOR_VERSION_UID) {
+        if (creatorVersionUid == '${ORTHANC_STL_CREATOR_VERSION_UID_MAINLINE}') {
           var b = $('<a>')
               .attr('id', id)
               .attr('data-role', 'button')
