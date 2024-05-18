@@ -1009,9 +1009,9 @@ extern "C"
 
     Orthanc::InitializeFramework("", false);
 
-    const bool hasCreateDicomStl_ = OrthancPlugins::CheckMinimalOrthancVersion(1, 12, 1);
+    const bool hasCreateDicomStl = OrthancPlugins::CheckMinimalOrthancVersion(1, 12, 1);
 
-    if (!hasCreateDicomStl_)
+    if (!hasCreateDicomStl)
     {
       LOG(WARNING) << "Your version of Orthanc (" << std::string(context->orthancVersion)
                    << ") is insufficient to create DICOM STL, it should be above 1.12.1";
@@ -1023,43 +1023,55 @@ extern "C"
     OrthancPlugins::RegisterRestCallback<ExtractStl>("/instances/([0-9a-f-]+)/stl", true);
     OrthancPlugins::RegisterRestCallback<ListStructures>("/stl/rt-struct/([0-9a-f-]+)", true);
 
-    if (hasCreateDicomStl_)
+    if (hasCreateDicomStl)
     {
       OrthancPlugins::RegisterRestCallback<EncodeStructureSet>("/stl/encode-rtstruct", true);
       OrthancPlugins::RegisterRestCallback<EncodeNifti>("/stl/encode-nifti", true);
     }
 
+    OrthancPlugins::OrthancConfiguration globalConfiguration;
+    OrthancPlugins::OrthancConfiguration configuration;
+    globalConfiguration.GetSection(configuration, "STL");
+
 #if ORTHANC_ENABLE_NEXUS == 1
-    nexusCache_.SetMaximumSize(512 * 1024 * 1024);  // Cache of 512MB for Nexus
-    OrthancPlugins::RegisterRestCallback<ExtractNexusModel>("/instances/([0-9a-f-]+)/nexus", true);
-    OrthancPlugins::RegisterRestCallback<ServeNexusAssets>("/stl/nexus/(.*)", true);
+    const bool enableNexus = configuration.GetBooleanValue("EnableNexus", false);
 
-    const bool hasCreateNexus_ = OrthancPlugins::CheckMinimalOrthancVersion(1, 9, 4);
-
-    if (hasCreateNexus_)
+    if (enableNexus)
     {
-      OrthancPlugins::RegisterRestCallback<DicomizeNexusModel>("/stl/create-nexus", true);
+      LOG(INFO) << "Support for Nexus is enabled";
+      nexusCache_.SetMaximumSize(512 * 1024 * 1024);  // Cache of 512MB for Nexus
+      OrthancPlugins::RegisterRestCallback<ExtractNexusModel>("/instances/([0-9a-f-]+)/nexus", true);
+      OrthancPlugins::RegisterRestCallback<ServeNexusAssets>("/stl/nexus/(.*)", true);
 
-      if (OrthancPluginRegisterPrivateDictionaryTag(
-            context, ORTHANC_STL_PRIVATE_GROUP, ORTHANC_STL_CREATOR_ELEMENT, OrthancPluginValueRepresentation_LO,
-            "PrivateCreator", 1, 1, ORTHANC_STL_PRIVATE_CREATOR) != OrthancPluginErrorCode_Success ||
-          OrthancPluginRegisterPrivateDictionaryTag(
-            context, ORTHANC_STL_PRIVATE_GROUP, ORTHANC_STL_NEXUS_ELEMENT, OrthancPluginValueRepresentation_OB,
-            "NexusData", 1, 1, ORTHANC_STL_PRIVATE_CREATOR) != OrthancPluginErrorCode_Success)
+      const bool hasCreateNexus_ = OrthancPlugins::CheckMinimalOrthancVersion(1, 9, 4);
+
+      if (hasCreateNexus_)
       {
-        LOG(ERROR) << "Cannot register the private DICOM tags for handling Nexus";
+        OrthancPlugins::RegisterRestCallback<DicomizeNexusModel>("/stl/create-nexus", true);
+
+        if (OrthancPluginRegisterPrivateDictionaryTag(
+              context, ORTHANC_STL_PRIVATE_GROUP, ORTHANC_STL_CREATOR_ELEMENT, OrthancPluginValueRepresentation_LO,
+              "PrivateCreator", 1, 1, ORTHANC_STL_PRIVATE_CREATOR) != OrthancPluginErrorCode_Success ||
+            OrthancPluginRegisterPrivateDictionaryTag(
+              context, ORTHANC_STL_PRIVATE_GROUP, ORTHANC_STL_NEXUS_ELEMENT, OrthancPluginValueRepresentation_OB,
+              "NexusData", 1, 1, ORTHANC_STL_PRIVATE_CREATOR) != OrthancPluginErrorCode_Success)
+        {
+          LOG(ERROR) << "Cannot register the private DICOM tags for handling Nexus";
+        }
+      }
+      else
+      {
+        LOG(WARNING) << "Your version of Orthanc (" << std::string(context->orthancVersion)
+                     << ") is insufficient to create DICOM-ize Nexus models, it should be above 1.9.4";
       }
     }
     else
     {
-      LOG(WARNING) << "Your version of Orthanc (" << std::string(context->orthancVersion)
-                   << ") is insufficient to create DICOM-ize Nexus models, it should be above 1.9.4";
+      LOG(INFO) << "Support for Nexus is disabled";
     }
+#else
+    const bool enableNexus = false;
 #endif
-
-    OrthancPlugins::OrthancConfiguration globalConfiguration;
-    OrthancPlugins::OrthancConfiguration configuration;
-    globalConfiguration.GetSection(configuration, "STL");
 
     // Extend the default Orthanc Explorer with custom JavaScript for STL
     std::string explorer;
@@ -1068,9 +1080,9 @@ extern "C"
       Orthanc::EmbeddedResources::GetFileResource(explorer, Orthanc::EmbeddedResources::ORTHANC_EXPLORER);
 
       std::map<std::string, std::string> dictionary;
-      dictionary["HAS_CREATE_DICOM_STL"] = (hasCreateDicomStl_ ? "true" : "false");
+      dictionary["HAS_CREATE_DICOM_STL"] = (hasCreateDicomStl ? "true" : "false");
       dictionary["SHOW_NIFTI_BUTTON"] = (configuration.GetBooleanValue("EnableNIfTI", false) ? "true" : "false");
-      dictionary["IS_NEXUS_ENABLED"] = (ORTHANC_ENABLE_NEXUS == 1 ? "true" : "false");
+      dictionary["IS_NEXUS_ENABLED"] = (enableNexus ? "true" : "false");
       explorer = Orthanc::Toolbox::SubstituteVariables(explorer, dictionary);
 
       OrthancPlugins::ExtendOrthancExplorer(ORTHANC_PLUGIN_NAME, explorer);
