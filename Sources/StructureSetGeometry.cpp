@@ -159,8 +159,8 @@ StructureSetGeometry::StructureSetGeometry(const StructureSet& structures,
   // Find the projection along the normal with the largest support
 
   bool first = true;
-  size_t bestSupport;
-  double bestProjection;
+  size_t bestSupport = 0;       // Explicit initialization to avoid valgrind warnings on old compilers
+  double bestProjection = 0.0;  // Explicit initialization to make old compilers happy
 
   std::list<size_t> candidates;
   for (size_t i = 0; i < projections.size(); i++)
@@ -209,6 +209,12 @@ StructureSetGeometry::StructureSetGeometry(const StructureSet& structures,
     }
 
     candidates.swap(next);
+  }
+
+  if (first)
+  {
+    // Should never happen
+    throw Orthanc::OrthancException(Orthanc::ErrorCode_InternalError);
   }
 
 
