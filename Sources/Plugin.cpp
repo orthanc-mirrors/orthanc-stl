@@ -949,6 +949,19 @@ void DicomizeNexusModel(OrthancPluginRestOutput* output,
                                     "POST body missing string field \"" + std::string(KEY_CONTENT) + "\"");
   }
 
+  std::string decoded;
+  Orthanc::Toolbox::DecodeBase64(decoded, body[KEY_CONTENT].asString());
+
+  if (decoded.size() < 4 ||
+      decoded[0] != 0x20 ||
+      decoded[1] != 0x73 ||
+      decoded[2] != 0x78 ||
+      decoded[3] != 0x4e)
+  {
+    throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat,
+                                    "This is not a valid Nexus file, its magic header is incorrect");
+  }
+
   Json::Value creationBody = Json::objectValue;
 
   creationBody[KEY_TAGS] = body[KEY_TAGS];
