@@ -340,7 +340,7 @@ function AddImportSTLButton(studyId) {
             var description = $('#stl-attach-instance-description').val();
 
             if (fileInput.files.length == 0) {
-              alert('No Instance file was selected');
+              alert('No STL file was selected');
               return;
             }
 
@@ -382,6 +382,105 @@ function AddImportSTLButton(studyId) {
         mode: 'blank',
         animate: false,
         headerText: 'Attach STL',
+        headerClose: true,
+        forceInput: false,
+        width: '100%',
+        blankContent: options
+      });
+    });
+  }
+}
+
+
+function AddImportNexusButton(studyId) {
+  if (${IS_NEXUS_ENABLED}) {
+    $('#stl-attach-nexus').remove();
+
+    var instance = $('<a>')
+        .attr('id', 'stl-attach-nexus')
+        .attr('data-role', 'button')
+        .attr('href', '#')
+        .attr('data-icon', 'search')
+        .attr('data-theme', 'e')
+        .text('Attach Nexus model')
+        .button();
+
+    instance.insertAfter($('#study-info'));
+    instance.click(function() {
+
+      var options = $('<ul>')
+          .attr('data-divider-theme', 'd')
+          .attr('data-role', 'listview');
+
+      var upload = $('<input>')
+          .attr('type', 'file')
+          .attr('id', 'stl-attach-nexus-upload')
+          .attr('data-theme', 'a');
+
+      options.append($('<li>').text('Choose the Nexus file:'));
+      options.append($('<li>').append(upload));
+
+      options.append($('<li>').text('Series description:'));
+      options.append($('<li>').append($('<input>')
+                                      .attr('type', 'text')
+                                      .attr('id', 'stl-attach-nexus-description')
+                                      .attr('data-theme', 'b')
+                                      .val('Imported Nexus')));
+
+      options.append($('<li>').append(
+        $('<a>')
+          .attr('href', '#')
+          .attr('rel', 'close').attr('data-theme', 'b')
+          .text('Import')
+          .click(function(e) {
+            e.preventDefault();
+
+            var fileInput = document.getElementById('stl-attach-nexus-upload');
+            var description = $('#stl-attach-nexus-description').val();
+
+            if (fileInput.files.length == 0) {
+              alert('No Nexus file was selected');
+              return;
+            }
+
+            reader = new FileReader();
+            reader.onload = function() {
+
+              // https://github.com/axios/axios/issues/513
+              var nexus = reader.result;
+              var nexusBase64 = btoa(new Uint8Array(nexus).reduce((data, byte) => data + String.fromCharCode(byte), ''));
+
+              $.ajax({
+                url: '../stl/create-nexus',
+                type: 'POST',
+                data: JSON.stringify({
+                  'Content' : nexusBase64,
+                  'Parent' : studyId,
+                  'Tags' : {
+                    'SeriesDescription' : description
+                  }
+                }),
+                dataType: 'json',
+                success: function(s) {
+                  $.mobile.changePage('#series?uuid=' + s.ParentSeries, {
+                    allowSamePageTransition: true
+                  });
+                },
+                error: function() {
+                  alert('Error while generating the 3D model');
+                }
+              });
+
+            };
+
+            reader.readAsArrayBuffer(fileInput.files[0]);
+          })));
+
+      // Launch the dialog
+      $('#dialog').simpledialog2({
+        mode: 'blank',
+        animate: false,
+        headerText: 'Attach Nexus',
         headerClose: true,
         forceInput: false,
         width: '100%',
@@ -482,5 +581,6 @@ $('#instance').live('pagebeforeshow', function() {
 $('#study').live('pagebeforeshow', function() {
   var studyId = $.mobile.pageData.uuid;
   AddImportSTLButton(studyId);
+  AddImportNexusButton(studyId);
   AddGenerateFromNIfTIButton(studyId);
 });
