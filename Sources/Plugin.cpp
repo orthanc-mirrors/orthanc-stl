@@ -22,6 +22,10 @@
  **/
 
 
+#if !defined(ORTHANC_ENABLE_NEXUS)
+#  error Macro ORTHANC_ENABLE_NEXUS must be defined
+#endif
+
 #include "StructureSetGeometry.h"
 #include "STLToolbox.h"
 #include "VTKToolbox.h"
@@ -41,7 +45,50 @@
 #include <boost/algorithm/string.hpp>
 #include <boost/thread/shared_mutex.hpp>
 
+
+#if ORTHANC_ENABLE_NEXUS == 1
+#  include <Cache/MemoryStringCache.h>
+#endif
+
 #define ORTHANC_PLUGIN_NAME  "stl"
+
+
+#if ORTHANC_ENABLE_NEXUS == 1
+static const char* const ORTHANC_STL_PRIVATE_CREATOR = "OrthancSTL";
+static const char* const ORTHANC_STL_MANUFACTURER = "ORTHANC^STL";
+static const uint16_t ORTHANC_STL_PRIVATE_GROUP = 0x4205u;
+static const uint16_t ORTHANC_STL_CREATOR_ELEMENT = 0x0010u;
+static const uint16_t ORTHANC_STL_NEXUS_ELEMENT = 0x1001u;
+static const Orthanc::DicomTag DICOM_TAG_CREATOR_VERSION_UID(0x0008, 0x9123);
+
+/**
+ * Each version of the STL plugin must provide a different value for
+ * the CreatorVersionUID (0008,9123) tag. A new UID can be generated
+ * by typing:
+ *
+ * $ python -c 'import pydicom; print(pydicom.uid.generate_uid())'
+ *
+ **/
+static const char* const ORTHANC_STL_CREATOR_VERSION_UID_MAINLINE = "1.2.826.0.1.3680043.8.498.90514926286349109728701975613711986292";
+
+static const char* const GetCreatorVersionUid(const std::string& version)
+{
+  if (version == "mainline")
+  {
+    return ORTHANC_STL_CREATOR_VERSION_UID_MAINLINE;
+  }
+  else
+  {
+    throw Orthanc::OrthancException(Orthanc::ErrorCode_InternalError);
+  }
+}
+
+static void FillOrthancExplorerCreatorVersionUid(std::map<std::string, std::string>& dictionary)
+{
+  dictionary["ORTHANC_STL_CREATOR_VERSION_UID_MAINLINE"] = ORTHANC_STL_CREATOR_VERSION_UID_MAINLINE;
+}
+
+#endif
 
 
 // Forward declaration
@@ -111,7 +158,6 @@ public:
 
 
 static ResourcesCache cache_;
-static bool hasCreateDicomStl_;
 
 void ServeFile(OrthancPluginRestOutput* output,
                const char* url,
@@ -123,7 +169,7 @@ void ServeFile(OrthancPluginRestOutput* output,
     return;
   }
 
-  std::string file = request->groups[0];
+  const std::string file = request->groups[0];
 
   if (boost::starts_with(file, "libs/"))
   {
@@ -701,6 +747,258 @@ void EncodeNifti(OrthancPluginRestOutput* output,
 }
 
 
+#if ORTHANC_ENABLE_NEXUS == 1
+
+void ServeNexusAssets(OrthancPluginRestOutput* output,
+                      const char* url,
+                      const OrthancPluginHttpRequest* request)
+{
+  if (request->method != OrthancPluginHttpMethod_Get)
+  {
+    OrthancPluginSendMethodNotAllowed(OrthancPlugins::GetGlobalContext(), output, "GET");
+    return;
+  }
+
+  const std::string file = request->groups[0];
+
+  Orthanc::EmbeddedResources::FileResourceId resourceId;
+  Orthanc::MimeType mimeType;
+
+  if (file == "threejs.html")
+  {
+    resourceId = Orthanc::EmbeddedResources::NEXUS_HTML;
+    mimeType = Orthanc::MimeType_Html;
+  }
+  else if (file == "js/meco.js")
+  {
+    resourceId = Orthanc::EmbeddedResources::NEXUS_MECO_JS;
+    mimeType = Orthanc::MimeType_JavaScript;
+  }
+  else if (file == "js/nexus.js")
+  {
+    resourceId = Orthanc::EmbeddedResources::NEXUS_JS;
+    mimeType = Orthanc::MimeType_JavaScript;
+  }
+  else if (file == "js/nexus_three.js")
+  {
+    resourceId = Orthanc::EmbeddedResources::NEXUS_THREE_JS;
+    mimeType = Orthanc::MimeType_JavaScript;
+  }
+  else if (file == "js/TrackballControls.js")
+  {
+    resourceId = Orthanc::EmbeddedResources::NEXUS_TRACKBALL_JS;
+    mimeType = Orthanc::MimeType_JavaScript;
+  }
+  else
+  {
+    OrthancPluginSendHttpStatusCode(OrthancPlugins::GetGlobalContext(), output, 404);
+    return;
+  }
+
+  std::string s;
+  Orthanc::EmbeddedResources::GetFileResource(s, resourceId);
+  OrthancPluginAnswerBuffer(OrthancPlugins::GetGlobalContext(), output, s.c_str(), s.size(), Orthanc::EnumerationToString(mimeType));
+}
+
+
+static Orthanc::MemoryStringCache nexusCache_;
+
+void ExtractNexusModel(OrthancPluginRestOutput* output,
+                       const char* url,
+                       const OrthancPluginHttpRequest* request)
+{
+  OrthancPluginContext* context = OrthancPlugins::GetGlobalContext();
+
+  if (request->method != OrthancPluginHttpMethod_Get)
+  {
+    OrthancPluginSendMethodNotAllowed(context, output, "GET");
+    return;
+  }
+
+  const std::string instanceId = request->groups[0];
+
+  std::string range;
+
+  for (uint32_t i = 0; i < request->headersCount; i++)
+  {
+    if (std::string(request->headersKeys[i]) == "range")
+    {
+      range = request->headersValues[i];
+    }
+  }
+
+  static const std::string BYTES = "bytes=";
+
+  if (!boost::starts_with(range, BYTES))
+  {
+    OrthancPluginSendHttpStatusCode(context, output, 416);  // Range not satisfiable
+    return;
+  }
+
+  std::vector<std::string> tokens;
+  Orthanc::Toolbox::TokenizeString(tokens, range.substr(BYTES.length()), '-');
+
+  uint64_t start, end;
+
+  if (tokens.size() != 2 ||
+      !Orthanc::SerializationToolbox::ParseUnsignedInteger64(start, tokens[0]) ||
+      !Orthanc::SerializationToolbox::ParseUnsignedInteger64(end, tokens[1]) ||
+      start < 0 ||
+      start > end)
+  {
+    OrthancPluginSendHttpStatusCode(context, output, 416);  // Range not satisfiable
+    return;
+  }
+
+  uint64_t modelSize;
+  std::string part;
+
+#if 0
+  {
+    // Use no cache
+    std::string model;
+    if (!OrthancPlugins::RestApiGetString(model, "/instances/" + instanceId + "/content/4205-1001", false))
+    {
+      OrthancPluginSendHttpStatusCode(context, output, 404);
+      return;
+    }
+
+    modelSize = model.size();
+
+    if (end >= modelSize)
+    {
+      OrthancPluginSendHttpStatusCode(context, output, 416);  // Range not satisfiable
+      return;
+    }
+
+    part = model.substr(start, end - start + 1);
+  }
+#else
+  {
+    Orthanc::MemoryStringCache::Accessor accessor(nexusCache_);
+
+    std::string model;
+    if (!accessor.Fetch(model, instanceId))
+    {
+      if (OrthancPlugins::RestApiGetString(model, "/instances/" + instanceId + "/content/4205-1001", false))
+      {
+        accessor.Add(instanceId, model);
+      }
+      else
+      {
+        OrthancPluginSendHttpStatusCode(context, output, 404);
+        return;
+      }
+    }
+
+    modelSize = model.size();
+
+    if (end >= modelSize)
+    {
+      OrthancPluginSendHttpStatusCode(context, output, 416);  // Range not satisfiable
+      return;
+    }
+
+    part = model.substr(start, end - start + 1);
+  }
+#endif
+
+  std::string s = ("bytes " + boost::lexical_cast<std::string>(start) + "-" +
+                   boost::lexical_cast<std::string>(end) + "/" +
+                   boost::lexical_cast<std::string>(modelSize));
+  OrthancPluginSetHttpHeader(context, output, "Content-Range", s.c_str());
+
+  s = boost::lexical_cast<std::string>(part.size());
+  OrthancPluginSetHttpHeader(context, output, "Content-Length", s.c_str());
+  OrthancPluginSetHttpHeader(context, output, "Content-Type", "application/octet-stream");
+
+  OrthancPluginSendHttpStatus(context, output, 206 /* partial content */, part.c_str(), part.size());
+}
+
+
+void DicomizeNexusModel(OrthancPluginRestOutput* output,
+                        const char* url,
+                        const OrthancPluginHttpRequest* request)
+{
+  static const char* KEY_CONTENT = "Content";
+  static const char* KEY_PARENT = "Parent";
+  static const char* KEY_TAGS = "Tags";
+  static const char* KEY_PRIVATE_CREATOR = "PrivateCreator";
+
+  OrthancPluginContext* context = OrthancPlugins::GetGlobalContext();
+
+  if (request->method != OrthancPluginHttpMethod_Post)
+  {
+    OrthancPluginSendMethodNotAllowed(context, output, "POST");
+    return;
+  }
+
+  Json::Value body;
+  if (!Orthanc::Toolbox::ReadJson(body, request->body, request->bodySize) ||
+      body.type() != Json::objectValue ||
+      !body.isMember(KEY_TAGS) ||
+      body[KEY_TAGS].type() != Json::objectValue)
+  {
+    throw Orthanc::OrthancException(Orthanc::ErrorCode_BadRequest);
+  }
+
+  if (!body.isMember(KEY_CONTENT) ||
+      body[KEY_CONTENT].type() != Json::stringValue)
+  {
+    throw Orthanc::OrthancException(Orthanc::ErrorCode_BadRequest,
+                                    "POST body missing string field \"" + std::string(KEY_CONTENT) + "\"");
+  }
+
+  std::string decoded;
+  Orthanc::Toolbox::DecodeBase64(decoded, body[KEY_CONTENT].asString());
+
+  if (decoded.size() < 4 ||
+      decoded[0] != 0x20 ||
+      decoded[1] != 0x73 ||
+      decoded[2] != 0x78 ||
+      decoded[3] != 0x4e)
+  {
+    throw Orthanc::OrthancException(Orthanc::ErrorCode_BadFileFormat,
+                                    "This is not a valid Nexus file, its magic header is incorrect");
+  }
+
+  Json::Value creationBody = Json::objectValue;
+
+  creationBody[KEY_TAGS] = body[KEY_TAGS];
+  creationBody[KEY_TAGS][Orthanc::DICOM_TAG_MANUFACTURER.Format()] = ORTHANC_STL_MANUFACTURER;
+  creationBody[KEY_TAGS][Orthanc::DICOM_TAG_SOP_CLASS_UID.Format()] = "1.2.840.10008.5.1.4.1.1.66";
+  creationBody[KEY_TAGS][Orthanc::DICOM_TAG_MODALITY.Format()] = "OT";
+  creationBody[KEY_TAGS][DICOM_TAG_CREATOR_VERSION_UID.Format()] = GetCreatorVersionUid(ORTHANC_STL_VERSION);
+  creationBody[KEY_TAGS][Orthanc::DicomTag(ORTHANC_STL_PRIVATE_GROUP, ORTHANC_STL_CREATOR_ELEMENT).Format()] = ORTHANC_STL_PRIVATE_CREATOR;
+  creationBody[KEY_TAGS][Orthanc::DicomTag(ORTHANC_STL_PRIVATE_GROUP, ORTHANC_STL_NEXUS_ELEMENT).Format()] =
+    "data:application/octet-stream;base64," + body[KEY_CONTENT].asString();
+  creationBody[KEY_PRIVATE_CREATOR] = ORTHANC_STL_PRIVATE_CREATOR;
+
+  if (body.isMember(KEY_PARENT))
+  {
+    creationBody[KEY_PARENT] = body[KEY_PARENT];
+  }
+
+  std::string bodyString;
+  Orthanc::Toolbox::WriteFastJson(bodyString, creationBody);
+
+  std::string result;
+  if (OrthancPlugins::RestApiPost(result, "/tools/create-dicom",
+                                  bodyString.empty() ? NULL : bodyString.c_str(),
+                                  bodyString.size(), false))
+  {
+    OrthancPluginAnswerBuffer(context, output, result.empty() ? NULL : result.c_str(),
+                              result.size(), "application/json");
+  }
+  else
+  {
+    throw Orthanc::OrthancException(Orthanc::ErrorCode_BadRequest);
+  }
+}
+
+#endif
+
+
 extern "C"
 {
   ORTHANC_PLUGINS_API int32_t OrthancPluginInitialize(OrthancPluginContext* context)
@@ -730,10 +1028,9 @@ extern "C"
 
     Orthanc::InitializeFramework("", false);
 
-    hasCreateDicomStl_ = OrthancPlugins::CheckMinimalOrthancVersion(1, 12, 1);
-    LOG(WARNING) << "Hello!";
+    const bool hasCreateDicomStl = OrthancPlugins::CheckMinimalOrthancVersion(1, 12, 1);
 
-    if (!hasCreateDicomStl_)
+    if (!hasCreateDicomStl)
     {
       LOG(WARNING) << "Your version of Orthanc (" << std::string(context->orthancVersion)
                    << ") is insufficient to create DICOM STL, it should be above 1.12.1";
@@ -745,7 +1042,7 @@ extern "C"
     OrthancPlugins::RegisterRestCallback<ExtractStl>("/instances/([0-9a-f-]+)/stl", true);
     OrthancPlugins::RegisterRestCallback<ListStructures>("/stl/rt-struct/([0-9a-f-]+)", true);
 
-    if (hasCreateDicomStl_)
+    if (hasCreateDicomStl)
     {
       OrthancPlugins::RegisterRestCallback<EncodeStructureSet>("/stl/encode-rtstruct", true);
       OrthancPlugins::RegisterRestCallback<EncodeNifti>("/stl/encode-nifti", true);
@@ -755,6 +1052,46 @@ extern "C"
     OrthancPlugins::OrthancConfiguration configuration;
     globalConfiguration.GetSection(configuration, "STL");
 
+#if ORTHANC_ENABLE_NEXUS == 1
+    const bool enableNexus = configuration.GetBooleanValue("EnableNexus", false);
+
+    if (enableNexus)
+    {
+      LOG(INFO) << "Support for Nexus is enabled";
+      nexusCache_.SetMaximumSize(512 * 1024 * 1024);  // Cache of 512MB for Nexus
+      OrthancPlugins::RegisterRestCallback<ExtractNexusModel>("/instances/([0-9a-f-]+)/nexus", true);
+      OrthancPlugins::RegisterRestCallback<ServeNexusAssets>("/stl/nexus/(.*)", true);
+
+      const bool hasCreateNexus_ = OrthancPlugins::CheckMinimalOrthancVersion(1, 9, 4);
+
+      if (hasCreateNexus_)
+      {
+        OrthancPlugins::RegisterRestCallback<DicomizeNexusModel>("/stl/create-nexus", true);
+
+        if (OrthancPluginRegisterPrivateDictionaryTag(
+              context, ORTHANC_STL_PRIVATE_GROUP, ORTHANC_STL_CREATOR_ELEMENT, OrthancPluginValueRepresentation_LO,
+              "PrivateCreator", 1, 1, ORTHANC_STL_PRIVATE_CREATOR) != OrthancPluginErrorCode_Success ||
+            OrthancPluginRegisterPrivateDictionaryTag(
+              context, ORTHANC_STL_PRIVATE_GROUP, ORTHANC_STL_NEXUS_ELEMENT, OrthancPluginValueRepresentation_OB,
+              "NexusData", 1, 1, ORTHANC_STL_PRIVATE_CREATOR) != OrthancPluginErrorCode_Success)
+        {
+          LOG(ERROR) << "Cannot register the private DICOM tags for handling Nexus";
+        }
+      }
+      else
+      {
+        LOG(WARNING) << "Your version of Orthanc (" << std::string(context->orthancVersion)
+                     << ") is insufficient to create DICOM-ize Nexus models, it should be above 1.9.4";
+      }
+    }
+    else
+    {
+      LOG(INFO) << "Support for Nexus is disabled";
+    }
+#else
+    const bool enableNexus = false;
+#endif
+
     // Extend the default Orthanc Explorer with custom JavaScript for STL
     std::string explorer;
 
@@ -762,8 +1099,11 @@ extern "C"
       Orthanc::EmbeddedResources::GetFileResource(explorer, Orthanc::EmbeddedResources::ORTHANC_EXPLORER);
 
       std::map<std::string, std::string> dictionary;
-      dictionary["HAS_CREATE_DICOM_STL"] = (hasCreateDicomStl_ ? "true" : "false");
+      dictionary["HAS_CREATE_DICOM_STL"] = (hasCreateDicomStl ? "true" : "false");
       dictionary["SHOW_NIFTI_BUTTON"] = (configuration.GetBooleanValue("EnableNIfTI", false) ? "true" : "false");
+      dictionary["IS_NEXUS_ENABLED"] = (enableNexus ? "true" : "false");
+      FillOrthancExplorerCreatorVersionUid(dictionary);
+
       explorer = Orthanc::Toolbox::SubstituteVariables(explorer, dictionary);
 
       OrthancPlugins::ExtendOrthancExplorer(ORTHANC_PLUGIN_NAME, explorer);

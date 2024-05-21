@@ -1,0 +1,16 @@
+Homepage: https://vcg.isti.cnr.it/nexus/
+
+GitHub: https://github.com/cnr-isti-vclab/nexus
+
+
+The files in folder "./Nexus" come from folder "html" in release 4.2
+(Nexus 2018), where the line:
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/84/three.js"></script>
+
+is replaced by the line:
+
+<script src="../app/libs/three-84.js"></script>
+
+
+WARNING: Releases 4.2.1, 4.2.2, and 4.3 do not seem to work anymore.
