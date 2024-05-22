@@ -1,6 +1,10 @@
 Pending changes in the mainline
 ===============================
 
+
+Version 1.1 (2024-05-22)
+========================
+
 => Minimum SDK version: 1.2.0 <=
 
 * Support for DICOM-ization of adaptive 3D models in the Nexus format:
