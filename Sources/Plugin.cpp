@@ -70,12 +70,17 @@ static const Orthanc::DicomTag DICOM_TAG_CREATOR_VERSION_UID(0x0008, 0x9123);
  *
  **/
 static const char* const ORTHANC_STL_CREATOR_VERSION_UID_MAINLINE = "1.2.826.0.1.3680043.8.498.90514926286349109728701975613711986292";
+static const char* const ORTHANC_STL_CREATOR_VERSION_UID_1_1 = "1.2.826.0.1.3680043.8.498.13468660186379895313063577332103681503";
 
 static const char* const GetCreatorVersionUid(const std::string& version)
 {
   if (version == "mainline")
   {
     return ORTHANC_STL_CREATOR_VERSION_UID_MAINLINE;
+  }
+  else if (version == "1.1")
+  {
+    return ORTHANC_STL_CREATOR_VERSION_UID_1_1;
   }
   else
   {
@@ -86,6 +91,7 @@ static const char* const GetCreatorVersionUid(const std::string& version)
 static void FillOrthancExplorerCreatorVersionUid(std::map<std::string, std::string>& dictionary)
 {
   dictionary["ORTHANC_STL_CREATOR_VERSION_UID_MAINLINE"] = ORTHANC_STL_CREATOR_VERSION_UID_MAINLINE;
+  dictionary["ORTHANC_STL_CREATOR_VERSION_UID_1_1"] = ORTHANC_STL_CREATOR_VERSION_UID_1_1;
 }
 
 #endif
