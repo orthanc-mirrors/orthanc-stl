@@ -1,0 +1,12 @@
+diff -urEb nexus.orig/threejs.html nexus/threejs.html
+--- nexus.orig/threejs.html	2024-06-15 16:43:08.948546947 +0200
++++ nexus/threejs.html	2024-06-15 16:43:46.232375961 +0200
+@@ -4,7 +4,7 @@
+ <title>Nexus threejs</title>
+ <meta charset="utf-8">
+ <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+-<style> body { margin:0; width:100vw; height:100vh; } #container { width:100vw; height:100vh; } </style>
++<style> body { margin:0; width:100vw; height:100vh; overflow-x: hidden; overflow-y: hidden; } #container { width:100vw; height:100vh; } </style>
+ <script src="js/three.min.js"></script>
+ <script src="js/nexus.js"></script>
+ <script src="js/nexus_three.js"></script>

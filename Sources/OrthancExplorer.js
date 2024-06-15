@@ -515,7 +515,7 @@ function AddOpenStlNexusButton(instanceId, id, parent) {
                   .attr('data-divider-theme', 'd')
                   .attr('data-role', 'listview');
 
-              AddViewer(viewers, 'Basic Nexus viewer (version 4.2 - Nexus 2018)', function() {
+              AddViewer(viewers, 'Basic Nexus viewer (version 4.3 - Nexus 2020)', function() {
                 window.open('../stl/nexus/threejs.html?model=../../instances/' + instanceId + '/nexus');
               });
 

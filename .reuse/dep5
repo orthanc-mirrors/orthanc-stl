@@ -3,7 +3,16 @@ Upstream-Name: orthanc-stl
 Upstream-Contact: Sebastien Jodogne <s.jodogne@gmail.com>
 Source: https://orthanc.uclouvain.be/
 
-Files: NEWS README WebApplications/o3dv.html WebApplications/three.html Resources/CreateThreeDist.txt Resources/Nexus.txt Resources/CMake/3dhop-4.3.patch
+Files:
+  NEWS
+  README
+  Resources/CMake/3dhop-4.3.patch
+  Resources/CMake/nexus-viewer-4.2.patch
+  Resources/CMake/nexus-viewer-4.3.patch
+  Resources/CreateThreeDist.txt
+  Resources/Nexus.txt
+  WebApplications/o3dv.html
+  WebApplications/three.html
 Copyright: 2023-2024 Sebastien Jodogne, UCLouvain, Belgium
 License: GPL-3.0-or-later
 
@@ -18,7 +27,3 @@ License: GPL-3.0-or-later
 Files: Resources/Orthanc/Sdk-1.2.0/orthanc/OrthancCPlugin.h
 Copyright: 2012-2016 Sebastien Jodogne <s.jodogne@gmail.com>, University Hospital of Liege (Belgium)
 License: GPL-3.0-or-later
-
-Files: Resources/Nexus/*
-Copyright: 2012-2018, Visual Computing Lab, ISTI - CNR
-License: MIT
