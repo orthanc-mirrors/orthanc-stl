@@ -6,7 +6,8 @@ syntax: glob
 ThirdPartyDownloads/
 JavaScriptLibraries/Online3DViewer-*.tar.gz
 JavaScriptLibraries/three.js-*.tar.gz
-JavaScriptLibraries/dist
+JavaScriptLibraries/dist-o3dv/
+JavaScriptLibraries/dist-three/
 i/
 s/
 *.orig

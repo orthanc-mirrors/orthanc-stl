@@ -1,6 +1,8 @@
 Pending changes in the mainline
 ===============================
 
+* Added 3DHOP viewer (version 4.3) for Nexus models
+
 
 Version 1.1 (2024-05-22)
 ========================
@@ -8,7 +10,7 @@ Version 1.1 (2024-05-22)
 => Minimum SDK version: 1.2.0 <=
 
 * Support for DICOM-ization of adaptive 3D models in the Nexus format:
-  https://vcg.isti.cnr.it/nexus/
+  https://vcg.isti.cnr.it/nexus/ (version 4.2 - Nexus 2018)
 
 
 Version 1.0 (2024-04-06)

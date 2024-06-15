@@ -26,6 +26,10 @@
 #  error Macro ORTHANC_ENABLE_NEXUS must be defined
 #endif
 
+#if !defined(ORTHANC_ENABLE_3DHOP)
+#  error Macro ORTHANC_ENABLE_3DHOP must be defined
+#endif
+
 #include "StructureSetGeometry.h"
 #include "STLToolbox.h"
 #include "VTKToolbox.h"
@@ -177,9 +181,10 @@ void ServeFile(OrthancPluginRestOutput* output,
 
   const std::string file = request->groups[0];
 
-  if (boost::starts_with(file, "libs/"))
+  if (boost::starts_with(file, "basic-viewer/") ||
+      boost::starts_with(file, "o3dv/"))
   {
-    cache_.Answer(output, file.substr(5));
+    cache_.Answer(output, file);
   }
   else
   {
@@ -767,43 +772,50 @@ void ServeNexusAssets(OrthancPluginRestOutput* output,
 
   const std::string file = request->groups[0];
 
-  Orthanc::EmbeddedResources::FileResourceId resourceId;
-  Orthanc::MimeType mimeType;
-
-  if (file == "threejs.html")
+  if (file == "three-84.js")
   {
-    resourceId = Orthanc::EmbeddedResources::NEXUS_HTML;
-    mimeType = Orthanc::MimeType_Html;
-  }
-  else if (file == "js/meco.js")
-  {
-    resourceId = Orthanc::EmbeddedResources::NEXUS_MECO_JS;
-    mimeType = Orthanc::MimeType_JavaScript;
-  }
-  else if (file == "js/nexus.js")
-  {
-    resourceId = Orthanc::EmbeddedResources::NEXUS_JS;
-    mimeType = Orthanc::MimeType_JavaScript;
-  }
-  else if (file == "js/nexus_three.js")
-  {
-    resourceId = Orthanc::EmbeddedResources::NEXUS_THREE_JS;
-    mimeType = Orthanc::MimeType_JavaScript;
-  }
-  else if (file == "js/TrackballControls.js")
-  {
-    resourceId = Orthanc::EmbeddedResources::NEXUS_TRACKBALL_JS;
-    mimeType = Orthanc::MimeType_JavaScript;
+    cache_.Answer(output, "nexus/three-84.js");
   }
   else
   {
-    OrthancPluginSendHttpStatusCode(OrthancPlugins::GetGlobalContext(), output, 404);
-    return;
-  }
+    Orthanc::EmbeddedResources::FileResourceId resourceId;
+    Orthanc::MimeType mimeType;
 
-  std::string s;
-  Orthanc::EmbeddedResources::GetFileResource(s, resourceId);
-  OrthancPluginAnswerBuffer(OrthancPlugins::GetGlobalContext(), output, s.c_str(), s.size(), Orthanc::EnumerationToString(mimeType));
+    if (file == "threejs.html")
+    {
+      resourceId = Orthanc::EmbeddedResources::NEXUS_HTML;
+      mimeType = Orthanc::MimeType_Html;
+    }
+    else if (file == "js/meco.js")
+    {
+      resourceId = Orthanc::EmbeddedResources::NEXUS_MECO_JS;
+      mimeType = Orthanc::MimeType_JavaScript;
+    }
+    else if (file == "js/nexus.js")
+    {
+      resourceId = Orthanc::EmbeddedResources::NEXUS_JS;
+      mimeType = Orthanc::MimeType_JavaScript;
+    }
+    else if (file == "js/nexus_three.js")
+    {
+      resourceId = Orthanc::EmbeddedResources::NEXUS_THREE_JS;
+      mimeType = Orthanc::MimeType_JavaScript;
+    }
+    else if (file == "js/TrackballControls.js")
+    {
+      resourceId = Orthanc::EmbeddedResources::NEXUS_TRACKBALL_JS;
+      mimeType = Orthanc::MimeType_JavaScript;
+    }
+    else
+    {
+      OrthancPluginSendHttpStatusCode(OrthancPlugins::GetGlobalContext(), output, 404);
+      return;
+    }
+
+    std::string s;
+    Orthanc::EmbeddedResources::GetFileResource(s, resourceId);
+    OrthancPluginAnswerBuffer(OrthancPlugins::GetGlobalContext(), output, s.c_str(), s.size(), Orthanc::EnumerationToString(mimeType));
+  }
 }
 
 
@@ -1005,6 +1017,25 @@ void DicomizeNexusModel(OrthancPluginRestOutput* output,
 #endif
 
 
+#if ORTHANC_ENABLE_3DHOP == 1
+
+void Serve3DHOPAssets(OrthancPluginRestOutput* output,
+                      const char* url,
+                      const OrthancPluginHttpRequest* request)
+{
+  if (request->method != OrthancPluginHttpMethod_Get)
+  {
+    OrthancPluginSendMethodNotAllowed(OrthancPlugins::GetGlobalContext(), output, "GET");
+    return;
+  }
+
+  const std::string file = request->groups[0];
+  cache_.Answer(output, "3dhop/" + file);
+}
+
+#endif
+
+
 extern "C"
 {
   ORTHANC_PLUGINS_API int32_t OrthancPluginInitialize(OrthancPluginContext* context)
@@ -1068,6 +1099,17 @@ extern "C"
       OrthancPlugins::RegisterRestCallback<ExtractNexusModel>("/instances/([0-9a-f-]+)/nexus", true);
       OrthancPlugins::RegisterRestCallback<ServeNexusAssets>("/stl/nexus/(.*)", true);
 
+#if ORTHANC_ENABLE_3DHOP == 1
+      OrthancPlugins::RegisterRestCallback<Serve3DHOPAssets>("/stl/3dhop/(.*)", true);
+
+      /**
+       * The 3DHOP viewer only supports ".nxs", ".nxz", and ".ply" extensions,
+       * as can be seen in the "minimal/js/presenter.js" file. Furthermore, it
+       * requires the extension to be part of the URL.
+       **/
+      OrthancPlugins::RegisterRestCallback<ExtractNexusModel>("/stl/3dhop-instances/([0-9a-f-]+).nxz", true);
+#endif
+
       const bool hasCreateNexus_ = OrthancPlugins::CheckMinimalOrthancVersion(1, 9, 4);
 
       if (hasCreateNexus_)
@@ -1108,6 +1150,7 @@ extern "C"
       dictionary["HAS_CREATE_DICOM_STL"] = (hasCreateDicomStl ? "true" : "false");
       dictionary["SHOW_NIFTI_BUTTON"] = (configuration.GetBooleanValue("EnableNIfTI", false) ? "true" : "false");
       dictionary["IS_NEXUS_ENABLED"] = (enableNexus ? "true" : "false");
+      dictionary["IS_3DHOP_ENABLED"] = ((ORTHANC_ENABLE_3DHOP == 1) ? "true" : "false");
       FillOrthancExplorerCreatorVersionUid(dictionary);
 
       explorer = Orthanc::Toolbox::SubstituteVariables(explorer, dictionary);

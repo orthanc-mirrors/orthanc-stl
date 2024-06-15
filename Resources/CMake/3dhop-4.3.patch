@@ -1,0 +1,38 @@
+diff -urEb 3dhop.orig/3DHOP_all_tools.html 3dhop/3DHOP_all_tools.html
+--- 3dhop.orig/3DHOP_all_tools.html	2024-06-15 15:43:28.329045772 +0200
++++ 3dhop/3DHOP_all_tools.html	2024-06-15 15:50:04.629862005 +0200
+@@ -106,6 +106,25 @@
+ </body>
+ 
+ <script type="text/javascript">
++// http://stackoverflow.com/a/21903119/881731
++function GetUrlParameter(sParam)
++{
++  var sPageURL = decodeURIComponent(window.location.search.substring(1));
++  var sURLVariables = sPageURL.split('&');
++
++  for (var i = 0; i < sURLVariables.length; i++) {
++    var sParameterName = sURLVariables[i].split('=');
++
++    if (sParameterName[0] === sParam) {
++      return sParameterName[1] === undefined ? '' : sParameterName[1];
++    }
++  }
++
++  return '';
++};
++
++var instanceId = GetUrlParameter('instance');
++
+ var presenter = null;
+ 
+ function setup3dhop() {
+@@ -113,7 +132,7 @@
+ 
+ 	presenter.setScene({
+ 		meshes: {
+-			"mesh_1" : { url: "models/gargo.nxz" }
++			"mesh_1" : { url: "../3dhop-instances/" + instanceId + ".nxz" }
+ 		},
+ 		modelInstances : {
+ 			"model_1" : { 

@@ -27,14 +27,37 @@ import os
 import sys
 
 if len(sys.argv) <= 2:
-    raise Exception('Usage: %s [target C++] [source folders]' % sys.argv[0])
+    raise Exception('Usage: %s [target C++] [folder prefixes] [source folders]' % sys.argv[0])
 
 SOURCES = sys.argv[2:]
 TARGET = sys.argv[1]
 
-for source in SOURCES:
-    if not os.path.isdir(source):
-        raise Exception('Nonexistent source folder: %s' % source)
+if len(SOURCES) % 2 != 0:
+    raise Exception('There must be an even number of sources')
+
+FILES = []
+
+for i in range(len(SOURCES) // 2):
+    prefix = SOURCES[i]
+    if '/' in prefix:
+        raise Exception('Prefix cannot contain a slash, but found: %s' % prefix)
+
+    folder = SOURCES[i + len(SOURCES) // 2]
+
+    if not os.path.isdir(folder):
+        raise Exception('Nonexistent source folder: %s' % folder)
+
+    for root, dirs, files in os.walk(folder):
+        files.sort()
+        dirs.sort()
+
+        for f in files:
+            FILES.append({
+                'path' : os.path.join(root, f),
+                'key' : prefix + '/' + os.path.relpath(os.path.join(root, f), folder),
+            })
+
+FILES = sorted(FILES, key = lambda x: x['key'])
 
 
 def EncodeFileAsCString(f, variable, content):
@@ -95,43 +118,35 @@ static void Uncompress(std::string& target, const void* data, size_t size, const
     index = {}
     count = 0
 
-    for source in SOURCES:
-        for root, dirs, files in os.walk(source):
-            files.sort()
-            dirs.sort()
+    for file in FILES:
+        variable = 'data_%06d' % count
+        count += 1
 
-            for f in files:
-                fullPath = os.path.join(root, f)
-                relativePath = os.path.relpath(os.path.join(root, f), source)
-                variable = 'data_%06d' % count
+        with open(file['path'], 'rb') as f:
+            content = f.read()
 
-                with open(fullPath, 'rb') as f:
-                    content = f.read()
+        if sys.version_info < (3, 0):
+            # Python 2.7
+            fileobj = io.BytesIO()
+            gzip.GzipFile(fileobj=fileobj, mode='w', mtime=0).write(content)
+            compressed = fileobj.getvalue()
+        else:
+            # Python 3.x
+            compressed = gzip.compress(content, mtime=0)
 
-                if sys.version_info < (3, 0):
-                    # Python 2.7
-                    fileobj = io.BytesIO()
-                    gzip.GzipFile(fileobj=fileobj, mode='w', mtime=0).write(content)
-                    compressed = fileobj.getvalue()
-                else:
-                    # Python 3.x
-                    compressed = gzip.compress(content, mtime=0)
+        EncodeFileAsCString(g, variable, compressed)
+        WriteChecksum(g, variable + '_md5', content)
 
-                EncodeFileAsCString(g, variable, compressed)
-                WriteChecksum(g, variable + '_md5', content)
-
-                index[relativePath] = variable
-
-                count += 1
+        file['variable'] = variable
     
     g.write('void ReadStaticAsset(std::string& target, const std::string& path)\n')
     g.write('{\n')
-    for (path, variable) in sorted(index.items()):
-        g.write('  if (path == "%s")\n' % path)
+    for file in FILES:
+        g.write('  if (path == "%s")\n' % file['key'])
         g.write('  {\n')
-        g.write('    Uncompress(target, %s, sizeof(%s) - 1, %s_md5);\n' % (variable, variable, variable))
+        g.write('    Uncompress(target, %s, sizeof(%s) - 1, %s_md5);\n' % (file['variable'], file['variable'], file['variable']))
         g.write('    return;\n')
         g.write('  }\n\n')
 
-    g.write('  throw Orthanc::OrthancException(Orthanc::ErrorCode_InexistentItem, "Unknown Three.js resource: " + path);\n')
+    g.write('  throw Orthanc::OrthancException(Orthanc::ErrorCode_InexistentItem, "Unknown static asset: " + path);\n')
     g.write('}\n')

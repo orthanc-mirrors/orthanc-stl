@@ -3,7 +3,7 @@ Upstream-Name: orthanc-stl
 Upstream-Contact: Sebastien Jodogne <s.jodogne@gmail.com>
 Source: https://orthanc.uclouvain.be/
 
-Files: NEWS README WebApplications/o3dv.html WebApplications/three.html Resources/CreateThreeDist.txt Resources/Nexus.txt
+Files: NEWS README WebApplications/o3dv.html WebApplications/three.html Resources/CreateThreeDist.txt Resources/Nexus.txt Resources/CMake/3dhop-4.3.patch
 Copyright: 2023-2024 Sebastien Jodogne, UCLouvain, Belgium
 License: GPL-3.0-or-later
 

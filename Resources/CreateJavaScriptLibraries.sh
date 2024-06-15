@@ -22,8 +22,8 @@
 
 
 # This command-line script uses the "npm" tool to populate the
-# "JavaScriptLibraries/dist" folder. It uses Docker to this end, in
-# order to be usable on our CIS.
+# "JavaScriptLibraries/dist-o3dv" and "JavaScriptLibraries/dist-three"
+# folders. It uses Docker to this end, in order to be usable on our CIS.
 
 set -ex
 
@@ -40,12 +40,18 @@ fi
 ROOT_DIR=`dirname $(readlink -f $0)`/..
 IMAGE=orthanc-stl-node
 
-if [ -e "${ROOT_DIR}/JavaScriptLibraries/dist/" ]; then
+if [ -e "${ROOT_DIR}/JavaScriptLibraries/dist-o3dv/" ]; then
     echo "Target folder is already existing, aborting"
     exit -1
 fi
 
-mkdir -p ${ROOT_DIR}/JavaScriptLibraries/dist/
+if [ -e "${ROOT_DIR}/JavaScriptLibraries/dist-three/" ]; then
+    echo "Target folder is already existing, aborting"
+    exit -1
+fi
+
+mkdir -p ${ROOT_DIR}/JavaScriptLibraries/dist-o3dv/
+mkdir -p ${ROOT_DIR}/JavaScriptLibraries/dist-three/
 
 ( cd ${ROOT_DIR}/Resources/CreateJavaScriptLibraries && \
       docker build --no-cache -t ${IMAGE} . )
@@ -70,7 +76,7 @@ docker run -t ${DOCKER_FLAGS} --rm \
        --user $(id -u):$(id -g) \
        -v ${ROOT_DIR}/Resources/CreateJavaScriptLibraries/build-o3dv.sh:/source/build-o3dv.sh:ro \
        -v ${ROOT_DIR}/JavaScriptLibraries/${O3DV}.tar.gz:/source/${O3DV}.tar.gz:ro \
-       -v ${ROOT_DIR}/JavaScriptLibraries/dist/:/target:rw \
+       -v ${ROOT_DIR}/JavaScriptLibraries/dist-o3dv/:/target:rw \
        ${IMAGE} \
        bash /source/build-o3dv.sh ${O3DV}
 
@@ -93,6 +99,6 @@ docker run -t ${DOCKER_FLAGS} --rm \
        --user $(id -u):$(id -g) \
        -v ${ROOT_DIR}/Resources/CreateJavaScriptLibraries/build-three.sh:/source/build-three.sh:ro \
        -v ${ROOT_DIR}/JavaScriptLibraries/${THREE}.tar.gz:/source/${THREE}.tar.gz:ro \
-       -v ${ROOT_DIR}/JavaScriptLibraries/dist/:/target:rw \
+       -v ${ROOT_DIR}/JavaScriptLibraries/dist-three/:/target:rw \
        ${IMAGE} \
        bash /source/build-three.sh ${THREE}

@@ -27,7 +27,7 @@ const STL_PLUGIN_SOP_CLASS_UID_RT_STRUCT = '1.2.840.10008.5.1.4.1.1.481.3';
 const STL_PLUGIN_SOP_CLASS_UID_RAW = '1.2.840.10008.5.1.4.1.1.66';
 
 
-function AddStlViewer(target, name, callback) {
+function AddViewer(target, name, callback) {
   var li = $('<li>', {
     name: name,
   }).click(callback);
@@ -59,11 +59,11 @@ function AddOpenStlViewerButton(instanceId, id, parent) {
         .attr('data-divider-theme', 'd')
         .attr('data-role', 'listview');
 
-    AddStlViewer(viewers, 'Basic viewer built using Three.js', function() {
+    AddViewer(viewers, 'Basic viewer built using Three.js', function() {
       window.open('../stl/app/three.html?instance=' + instanceId);
     });
 
-    AddStlViewer(viewers, 'Online3DViewer', function() {
+    AddViewer(viewers, 'Online3DViewer', function() {
       window.open('../stl/app/o3dv.html?instance=' + instanceId);
     });
 
@@ -510,7 +510,32 @@ function AddOpenStlNexusButton(instanceId, id, parent) {
           b.insertAfter($('#' + parent));
 
           b.click(function() {
-            window.open('../stl/nexus/threejs.html?model=../../instances/' + instanceId + '/nexus');
+            if (${IS_3DHOP_ENABLED}) {
+              var viewers = $('<ul>')
+                  .attr('data-divider-theme', 'd')
+                  .attr('data-role', 'listview');
+
+              AddViewer(viewers, 'Basic Nexus viewer', function() {
+                window.open('../stl/nexus/threejs.html?model=../../instances/' + instanceId + '/nexus');
+              });
+
+              AddViewer(viewers, '3DHOP', function() {
+                window.open('../stl/3dhop/3DHOP_all_tools.html?instance=' + instanceId);
+              });
+
+              // Launch the dialog
+              $('#dialog').simpledialog2({
+                mode: 'blank',
+                animate: false,
+                headerText: 'Choose Nexus viewer',
+                headerClose: true,
+                forceInput: false,
+                width: '100%',
+                blankContent: viewers
+              });
+            } else {
+              window.open('../stl/nexus/threejs.html?model=../../instances/' + instanceId + '/nexus');
+            }
           });
         }
       }

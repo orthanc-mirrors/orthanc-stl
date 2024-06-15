@@ -24,8 +24,8 @@
 
 import * as THREE from 'three';
 
-import { OrbitControls } from './libs/OrbitControls.js';
-import { STLLoader } from './libs/STLLoader.js';
+import { OrbitControls } from './basic-viewer/OrbitControls.js';
+import { STLLoader } from './basic-viewer/STLLoader.js';
 
 
 // http://stackoverflow.com/a/21903119/881731
