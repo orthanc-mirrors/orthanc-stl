@@ -63,7 +63,7 @@ function AddOpenStlViewerButton(instanceId, id, parent) {
       window.open('../stl/app/three.html?instance=' + instanceId);
     });
 
-    AddViewer(viewers, 'Online3DViewer', function() {
+    AddViewer(viewers, 'Online3DViewer (version 0.12.0)', function() {
       window.open('../stl/app/o3dv.html?instance=' + instanceId);
     });
 
@@ -515,11 +515,11 @@ function AddOpenStlNexusButton(instanceId, id, parent) {
                   .attr('data-divider-theme', 'd')
                   .attr('data-role', 'listview');
 
-              AddViewer(viewers, 'Basic Nexus viewer', function() {
+              AddViewer(viewers, 'Basic Nexus viewer (version 4.2 - Nexus 2018)', function() {
                 window.open('../stl/nexus/threejs.html?model=../../instances/' + instanceId + '/nexus');
               });
 
-              AddViewer(viewers, '3DHOP', function() {
+              AddViewer(viewers, '3DHOP (version 4.3)', function() {
                 window.open('../stl/3dhop/3DHOP_all_tools.html?instance=' + instanceId);
               });
 
