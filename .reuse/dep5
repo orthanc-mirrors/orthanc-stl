@@ -7,8 +7,8 @@ Files:
   NEWS
   README
   Resources/CMake/3dhop-4.3.patch
-  Resources/CMake/nexus-viewer-4.2.patch
-  Resources/CMake/nexus-viewer-4.3.patch
+  Resources/CMake/NexusViewer-4.2.patch
+  Resources/CMake/NexusViewer-4.3.patch
   Resources/CreateThreeDist.txt
   Resources/Nexus.txt
   WebApplications/o3dv.html

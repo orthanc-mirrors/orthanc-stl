@@ -20,23 +20,28 @@
 
 
 DownloadPackage(
-  "bf61d139b592eb5b724f0f8a3f53bb04"
-  "https://orthanc.uclouvain.be/downloads/third-party-downloads/STL/nexus-4.3.zip"
-  "${CMAKE_BINARY_DIR}/nexus-4.3")
+  "6069b141edb7ce1d543b53ddaa4b41d1"
+  "https://orthanc.uclouvain.be/downloads/third-party-downloads/STL/nexus-4.2.zip"
+  "${CMAKE_BINARY_DIR}/nexus-4.2")
 
 set(NEXUS_VIEWER_DIR  ${CMAKE_CURRENT_BINARY_DIR}/nexus)
 file(MAKE_DIRECTORY ${NEXUS_VIEWER_DIR})
 
+DownloadCompressedFile(
+  "df21a4a192c0952a1189125609cc76f9"
+  "https://orthanc.uclouvain.be/downloads/third-party-downloads/STL/three-84.js.gz"
+  "${NEXUS_VIEWER_DIR}/three-84.js")
+
 file(COPY
-  ${CMAKE_BINARY_DIR}/nexus-4.3/html/js
-  ${CMAKE_BINARY_DIR}/nexus-4.3/html/threejs.html
+  ${CMAKE_BINARY_DIR}/nexus-4.2/html/js
+  ${CMAKE_BINARY_DIR}/nexus-4.2/html/threejs.html
   DESTINATION
   ${NEXUS_VIEWER_DIR}
   )
 
 execute_process(
   COMMAND ${PATCH_EXECUTABLE} -p0 -N -i
-  ${CMAKE_CURRENT_LIST_DIR}/nexus-viewer-4.3.patch
+  ${CMAKE_CURRENT_LIST_DIR}/NexusViewer-4.2.patch
   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
   RESULT_VARIABLE Failure
   )

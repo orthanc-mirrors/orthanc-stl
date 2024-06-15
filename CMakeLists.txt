@@ -198,7 +198,8 @@ list(APPEND STATIC_ASSETS_PREFIXES "basic-viewer")
 list(APPEND STATIC_ASSETS_CONTENT  "${CMAKE_SOURCE_DIR}/JavaScriptLibraries/dist-three")
 
 if (ENABLE_NEXUS)
-  include(${CMAKE_SOURCE_DIR}/Resources/CMake/NexusViewer.cmake)
+  #include(${CMAKE_SOURCE_DIR}/Resources/CMake/NexusViewer-4.2.cmake)
+  include(${CMAKE_SOURCE_DIR}/Resources/CMake/NexusViewer-4.3.cmake)
 
   list(APPEND STATIC_ASSETS_PREFIXES "nexus")
   list(APPEND STATIC_ASSETS_CONTENT  ${NEXUS_VIEWER_DIR})
