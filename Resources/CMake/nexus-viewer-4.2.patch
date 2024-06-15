@@ -1,0 +1,12 @@
+diff -urEb nexus.orig/threejs.html nexus/threejs.html
+--- nexus.orig/threejs.html	2024-06-15 16:27:10.763574203 +0200
++++ nexus/threejs.html	2024-06-15 16:28:03.807136118 +0200
+@@ -5,7 +5,7 @@
+ <meta charset="utf-8">
+ <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+ <style>body { margin: 0px; overflow: hidden; }</style>
+-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/84/three.js"></script>
++<script src="three-84.js"></script>
+ <script src="js/TrackballControls.js"></script>
+ <script src="js/nexus.js"></script>
+ <script src="js/nexus_three.js"></script>

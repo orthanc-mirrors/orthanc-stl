@@ -771,51 +771,7 @@ void ServeNexusAssets(OrthancPluginRestOutput* output,
   }
 
   const std::string file = request->groups[0];
-
-  if (file == "three-84.js")
-  {
-    cache_.Answer(output, "nexus/three-84.js");
-  }
-  else
-  {
-    Orthanc::EmbeddedResources::FileResourceId resourceId;
-    Orthanc::MimeType mimeType;
-
-    if (file == "threejs.html")
-    {
-      resourceId = Orthanc::EmbeddedResources::NEXUS_HTML;
-      mimeType = Orthanc::MimeType_Html;
-    }
-    else if (file == "js/meco.js")
-    {
-      resourceId = Orthanc::EmbeddedResources::NEXUS_MECO_JS;
-      mimeType = Orthanc::MimeType_JavaScript;
-    }
-    else if (file == "js/nexus.js")
-    {
-      resourceId = Orthanc::EmbeddedResources::NEXUS_JS;
-      mimeType = Orthanc::MimeType_JavaScript;
-    }
-    else if (file == "js/nexus_three.js")
-    {
-      resourceId = Orthanc::EmbeddedResources::NEXUS_THREE_JS;
-      mimeType = Orthanc::MimeType_JavaScript;
-    }
-    else if (file == "js/TrackballControls.js")
-    {
-      resourceId = Orthanc::EmbeddedResources::NEXUS_TRACKBALL_JS;
-      mimeType = Orthanc::MimeType_JavaScript;
-    }
-    else
-    {
-      OrthancPluginSendHttpStatusCode(OrthancPlugins::GetGlobalContext(), output, 404);
-      return;
-    }
-
-    std::string s;
-    Orthanc::EmbeddedResources::GetFileResource(s, resourceId);
-    OrthancPluginAnswerBuffer(OrthancPlugins::GetGlobalContext(), output, s.c_str(), s.size(), Orthanc::EnumerationToString(mimeType));
-  }
+  cache_.Answer(output, "nexus/" + file);
 }
 
 
