@@ -497,7 +497,8 @@ function AddOpenStlNexusButton(instanceId, id, parent) {
       url: '/instances/' + instanceId + '/content/0008,9123',
       success: function(creatorVersionUid) {
         if (creatorVersionUid == '${ORTHANC_STL_CREATOR_VERSION_UID_MAINLINE}' ||
-            creatorVersionUid == '${ORTHANC_STL_CREATOR_VERSION_UID_1_1}') {
+            creatorVersionUid == '${ORTHANC_STL_CREATOR_VERSION_UID_1_1}' ||
+            creatorVersionUid == '${ORTHANC_STL_CREATOR_VERSION_UID_1_2}') {
           var b = $('<a>')
               .attr('id', id)
               .attr('data-role', 'button')
