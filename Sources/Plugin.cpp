@@ -30,8 +30,9 @@
 #  error Macro ORTHANC_ENABLE_3DHOP must be defined
 #endif
 
-#include "StructureSetGeometry.h"
+#include "ResourcesCache.h"
 #include "STLToolbox.h"
+#include "StructureSetGeometry.h"
 #include "VTKToolbox.h"
 
 #include <EmbeddedResources.h>
@@ -105,135 +106,6 @@ static void FillOrthancExplorerCreatorVersionUid(std::map<std::string, std::stri
 }
 
 #endif
-
-
-// Forward declaration
-void ReadStaticAsset(std::string& target,
-                     const std::string& path);
-
-
-/**
- * As the static assets are gzipped by the "EmbedStaticAssets.py"
- * script, we use a cache to maintain the uncompressed assets in order
- * to avoid multiple gzip decodings.
- **/
-class ResourcesCache : public boost::noncopyable
-{
-public:
-  class IHandler : public boost::noncopyable
-  {
-  public:
-    virtual ~IHandler()
-    {
-    }
-
-    virtual void Apply(const std::string& resource) = 0;
-  };
-
-private:
-  typedef std::map<std::string, std::string*>  Content;
-  
-  boost::shared_mutex  mutex_;
-  Content              content_;
-
-  class RestOutputHandler : public IHandler
-  {
-  private:
-    OrthancPluginRestOutput* output_;
-    std::string              mime_;
-
-  public:
-    RestOutputHandler(OrthancPluginRestOutput* output,
-                      const std::string& mime) :
-      output_(output),
-      mime_(mime)
-    {
-    }
-
-    virtual void Apply(const std::string& resource) ORTHANC_OVERRIDE
-    {
-      OrthancPluginAnswerBuffer(OrthancPlugins::GetGlobalContext(), output_,
-                                resource.c_str(), resource.size(), mime_.c_str());
-    }
-  };
-
-  class StoreResourceIntoString : public IHandler
-  {
-  private:
-    std::string& target_;
-
-  public:
-    StoreResourceIntoString(std::string& target) :
-      target_(target)
-    {
-    }
-
-    virtual void Apply(const std::string& resource) ORTHANC_OVERRIDE
-    {
-      target_ = resource;
-    }
-  };
-
-public:
-  ~ResourcesCache()
-  {
-    for (Content::iterator it = content_.begin(); it != content_.end(); ++it)
-    {
-      assert(it->second != NULL);
-      delete it->second;
-    }
-  }
-
-  void Apply(IHandler& handler,
-             const std::string& path)
-  {
-    {
-      // Check whether the cache already contains the resource
-      boost::shared_lock<boost::shared_mutex> lock(mutex_);
-
-      Content::const_iterator found = content_.find(path);
-    
-      if (found != content_.end())
-      {
-        assert(found->second != NULL);
-        handler.Apply(*found->second);
-        return;
-      }
-    }
-
-    // This resource has not been cached yet
-
-    std::unique_ptr<std::string> item(new std::string);
-    ReadStaticAsset(*item, path);
-    handler.Apply(*item);
-
-    {
-      // Store the resource into the cache
-      boost::unique_lock<boost::shared_mutex> lock(mutex_);
-
-      if (content_.find(path) == content_.end())
-      {
-        content_[path] = item.release();
-      }
-    }
-  }
-
-  void Answer(OrthancPluginRestOutput* output,
-              const std::string& path)
-  {
-    const std::string mime = Orthanc::EnumerationToString(Orthanc::SystemToolbox::AutodetectMimeType(path));
-
-    RestOutputHandler handler(output, mime);
-    Apply(handler, path);
-  }
-
-  void ReadResource(std::string& target,
-                   const std::string& path)
-  {
-    StoreResourceIntoString handler(target);
-    Apply(handler, path);
-  }
-};
 
 
 static ResourcesCache cache_;

@@ -253,6 +253,7 @@ add_custom_target(
 add_library(OrthancSTL SHARED
   Sources/Extent2D.cpp
   Sources/Plugin.cpp
+  Sources/ResourcesCache.cpp
   Sources/STLToolbox.cpp
   Sources/StructurePolygon.cpp
   Sources/StructureSet.cpp
