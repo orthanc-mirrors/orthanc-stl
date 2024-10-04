@@ -29,6 +29,8 @@
 #include <Compatibility.h>
 #include <SystemToolbox.h>
 
+#include <boost/thread.hpp>
+
 
 // Forward declaration
 void ReadStaticAsset(std::string& target,
