@@ -1,7 +1,13 @@
 diff -urEb 3dhop.orig/3DHOP_all_tools.html 3dhop/3DHOP_all_tools.html
---- 3dhop.orig/3DHOP_all_tools.html	2024-06-15 15:43:28.329045772 +0200
-+++ 3dhop/3DHOP_all_tools.html	2024-06-15 15:50:04.629862005 +0200
-@@ -106,6 +106,25 @@
+--- 3dhop.orig/3DHOP_all_tools.html	2024-10-04 15:38:25.961879494 +0200
++++ 3dhop/3DHOP_all_tools.html	2024-10-04 15:39:42.273297957 +0200
+@@ -101,11 +101,30 @@
+  </div>
+ <!--SECTIONS-->
+ 
+- <canvas id="draw-canvas" style="background-image: url(skins/backgrounds/light.jpg)"/>
++ <canvas id="draw-canvas" style="${{CANVAS_STYLE}}"/>
+ </div>
  </body>
  
  <script type="text/javascript">
@@ -36,3 +42,4 @@ diff -urEb 3dhop.orig/3DHOP_all_tools.html 3dhop/3DHOP_all_tools.html
  		},
  		modelInstances : {
  			"model_1" : { 
+Only in 3dhop: 3DHOP_all_tools.html~

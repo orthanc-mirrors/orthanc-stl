@@ -119,11 +119,60 @@ void ReadStaticAsset(std::string& target,
  **/
 class ResourcesCache : public boost::noncopyable
 {
+public:
+  class IHandler : public boost::noncopyable
+  {
+  public:
+    virtual ~IHandler()
+    {
+    }
+
+    virtual void Apply(const std::string& resource) = 0;
+  };
+
 private:
   typedef std::map<std::string, std::string*>  Content;
   
   boost::shared_mutex  mutex_;
   Content              content_;
+
+  class RestOutputHandler : public IHandler
+  {
+  private:
+    OrthancPluginRestOutput* output_;
+    std::string              mime_;
+
+  public:
+    RestOutputHandler(OrthancPluginRestOutput* output,
+                      const std::string& mime) :
+      output_(output),
+      mime_(mime)
+    {
+    }
+
+    virtual void Apply(const std::string& resource) ORTHANC_OVERRIDE
+    {
+      OrthancPluginAnswerBuffer(OrthancPlugins::GetGlobalContext(), output_,
+                                resource.c_str(), resource.size(), mime_.c_str());
+    }
+  };
+
+  class StoreResourceIntoString : public IHandler
+  {
+  private:
+    std::string& target_;
+
+  public:
+    StoreResourceIntoString(std::string& target) :
+      target_(target)
+    {
+    }
+
+    virtual void Apply(const std::string& resource) ORTHANC_OVERRIDE
+    {
+      target_ = resource;
+    }
+  };
 
 public:
   ~ResourcesCache()
@@ -135,11 +184,9 @@ public:
     }
   }
 
-  void Answer(OrthancPluginRestOutput* output,
-              const std::string& path)
+  void Apply(IHandler& handler,
+             const std::string& path)
   {
-    const std::string mime = Orthanc::EnumerationToString(Orthanc::SystemToolbox::AutodetectMimeType(path));
-
     {
       // Check whether the cache already contains the resource
       boost::shared_lock<boost::shared_mutex> lock(mutex_);
@@ -149,7 +196,7 @@ public:
       if (found != content_.end())
       {
         assert(found->second != NULL);
-        OrthancPluginAnswerBuffer(OrthancPlugins::GetGlobalContext(), output, found->second->c_str(), found->second->size(), mime.c_str());
+        handler.Apply(*found->second);
         return;
       }
     }
@@ -158,7 +205,7 @@ public:
 
     std::unique_ptr<std::string> item(new std::string);
     ReadStaticAsset(*item, path);
-    OrthancPluginAnswerBuffer(OrthancPlugins::GetGlobalContext(), output, item->c_str(), item->size(), mime.c_str());
+    handler.Apply(*item);
 
     {
       // Store the resource into the cache
@@ -169,6 +216,22 @@ public:
         content_[path] = item.release();
       }
     }
+  }
+
+  void Answer(OrthancPluginRestOutput* output,
+              const std::string& path)
+  {
+    const std::string mime = Orthanc::EnumerationToString(Orthanc::SystemToolbox::AutodetectMimeType(path));
+
+    RestOutputHandler handler(output, mime);
+    Apply(handler, path);
+  }
+
+  void ReadResource(std::string& target,
+                   const std::string& path)
+  {
+    StoreResourceIntoString handler(target);
+    Apply(handler, path);
   }
 };
 
@@ -981,6 +1044,9 @@ void DicomizeNexusModel(OrthancPluginRestOutput* output,
 
 #if ORTHANC_ENABLE_3DHOP == 1
 
+// This is the default background style of 3DHOP
+static std::string canvasStyle3DHOP_ = "background-image: url(skins/backgrounds/light.jpg)";
+
 void Serve3DHOPAssets(OrthancPluginRestOutput* output,
                       const char* url,
                       const OrthancPluginHttpRequest* request)
@@ -992,7 +1058,22 @@ void Serve3DHOPAssets(OrthancPluginRestOutput* output,
   }
 
   const std::string file = request->groups[0];
-  cache_.Answer(output, "3dhop/" + file);
+  const std::string resourceId = "3dhop/" + file;
+
+  if (file == "3DHOP_all_tools.html")
+  {
+    std::string resource;
+    cache_.ReadResource(resource, resourceId);
+
+    boost::replace_all(resource, "${{CANVAS_STYLE}}", canvasStyle3DHOP_);
+
+    OrthancPluginAnswerBuffer(OrthancPlugins::GetGlobalContext(), output, resource.c_str(),
+                              resource.size(), Orthanc::EnumerationToString(Orthanc::MimeType_Html));
+  }
+  else
+  {
+    cache_.Answer(output, resourceId);
+  }
 }
 
 #endif
@@ -1052,6 +1133,9 @@ extern "C"
     globalConfiguration.GetSection(configuration, "STL");
 
 #if ORTHANC_ENABLE_NEXUS == 1
+    OrthancPlugins::OrthancConfiguration configuration3DHOP;
+    configuration.GetSection(configuration3DHOP, "3DHOP");
+
     const bool enableNexus = configuration.GetBooleanValue("EnableNexus", false);
 
     if (enableNexus)
@@ -1071,6 +1155,11 @@ extern "C"
        **/
       OrthancPlugins::RegisterRestCallback<ExtractNexusModel>("/stl/3dhop-instances/([0-9a-f-]+).nxz", true);
 #endif
+
+      // New in release 1.3
+      canvasStyle3DHOP_ = configuration3DHOP.GetStringValue(
+        "CanvasStyle",
+        "background-image: url(skins/backgrounds/light.jpg)"); // This is the default background style of 3DHOP
 
       const bool hasCreateNexus_ = OrthancPlugins::CheckMinimalOrthancVersion(1, 9, 4);
 
