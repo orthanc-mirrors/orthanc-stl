@@ -494,7 +494,7 @@ function AddImportNexusButton(studyId) {
 function AddOpenStlNexusButton(instanceId, id, parent) {
   if (${IS_NEXUS_ENABLED}) {
     $.ajax({
-      url: '/instances/' + instanceId + '/content/0008,9123',
+      url: '../instances/' + instanceId + '/content/0008,9123',
       success: function(creatorVersionUid) {
         if (creatorVersionUid == '${ORTHANC_STL_CREATOR_VERSION_UID_MAINLINE}' ||
             creatorVersionUid == '${ORTHANC_STL_CREATOR_VERSION_UID_1_1}' ||
@@ -557,7 +557,7 @@ $('#series').live('pagebeforeshow', function() {
       var instanceId = series['Instances'][0];
 
       $.ajax({
-        url: '/instances/' + instanceId + '/metadata/SopClassUid',
+        url: '../instances/' + instanceId + '/metadata/SopClassUid',
         success: function(sopClassUid) {
 
           if (sopClassUid == STL_PLUGIN_SOP_CLASS_UID_STL) {
@@ -586,7 +586,7 @@ $('#instance').live('pagebeforeshow', function() {
   $('#stl-generate-rtstruct-instance').remove();
 
   $.ajax({
-    url: '/instances/' + instanceId + '/metadata/SopClassUid',
+    url: '../instances/' + instanceId + '/metadata/SopClassUid',
     success: function(sopClassUid) {
 
       if (sopClassUid == STL_PLUGIN_SOP_CLASS_UID_STL) {
