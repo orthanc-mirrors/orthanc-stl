@@ -11,3 +11,4 @@ JavaScriptLibraries/dist-three/
 i/
 s/
 *.orig
+.vscode/

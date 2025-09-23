@@ -40,7 +40,26 @@ function GetUrlParameter(sParam)
 };
 
 var instanceId = GetUrlParameter('instance');
+var token = GetUrlParameter('token');
 
+async function loadStl(viewer, instanceId) {
+  
+  var headers = {};
+  if (token) {
+      headers['Authorization'] = 'Bearer ' + token
+  }
+
+  const response = await fetch('../../instances/' + instanceId + '/stl', {
+    headers: headers
+  });
+
+  const blob = await response.blob();
+  const file = new File([blob], 'model.stl');
+
+  viewer.LoadModelFromInputFiles([
+    new OV.InputFile('model.stl', OV.FileSource.File, file),
+  ]);
+}
 
 window.addEventListener ('load', () => {
   let parentDiv = document.getElementById ('viewer');
@@ -55,7 +74,5 @@ window.addEventListener ('load', () => {
     edgeSettings : new OV.EdgeSettings (false, new OV.RGBColor (255, 255, 255), 1)
   });
 
-  viewer.LoadModelFromInputFiles ([
-    new OV.InputFile('model.stl', OV.FileSource.Url, '../../instances/' + instanceId + '/stl'),
-  ]);
+  loadStl(viewer, instanceId);
 });

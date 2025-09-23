@@ -64,6 +64,12 @@ light2.position.set(10, 10, 10);
 scene.add(light2);
 
 const loader = new STLLoader()
+
+var token = GetUrlParameter('token');
+if (token) {
+  loader.setRequestHeader({'Authorization': 'Bearer ' + token})
+}
+
 loader.load(
   //'../../instances/' + instanceId + '/content/0042-0011',
   '../../instances/' + instanceId + '/stl',
