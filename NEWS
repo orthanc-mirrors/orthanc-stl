@@ -1,5 +1,5 @@
-Pending changes in the mainline
-===============================
+Version 1.3 (2025-10-10)
+========================
 
 * Added configuration option "STL.3DHOP.CanvasStyle" to change the
   background of the 3DHOP viewer

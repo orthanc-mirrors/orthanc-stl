@@ -35,7 +35,7 @@
 cmake_minimum_required(VERSION 3.12)
 project(OrthancSTL)
 
-set(ORTHANC_STL_VERSION "mainline")
+set(ORTHANC_STL_VERSION "1.3")
 
 if (ORTHANC_STL_VERSION STREQUAL "mainline")
   set(ORTHANC_FRAMEWORK_DEFAULT_VERSION "mainline")
