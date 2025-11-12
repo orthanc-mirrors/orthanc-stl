@@ -1,11 +1,15 @@
+Pending changes in the mainline
+===============================
+
+
 Version 1.3 (2025-10-10)
 ========================
 
 * Added configuration option "STL.3DHOP.CanvasStyle" to change the
   background of the 3DHOP viewer
-* Basic Viewer + Online3DViewer: Added support for a 'token' get url 
-  argument that is then passed as an 'Authorization' HTTP header when 
-  querying the model from the Orthanc Rest API.
+* Basic Viewer + Online3DViewer: Added support for a "token" get URL
+  argument that is then passed as an "Authorization" HTTP header when
+  querying the model from the Orthanc REST API.
 
 
 Version 1.2 (2024-06-16)
